@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZNS – Zentrales Nachrichten-System</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        /* ── Layout ── */
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            grid-template-rows: 48px 1fr;
+            height: 100vh;
+        }
+
+        /* ── Titelleiste ── */
+        .titlebar {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            -webkit-app-region: drag;
+        }
+
+        .titlebar-logo {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.3px;
+        }
+
+        .titlebar-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .titlebar-status {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            -webkit-app-region: no-drag;
+        }
+
+        .status-label {
+            transition: color 0.3s;
+        }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 13px 20px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all var(--transition);
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: var(--bg-ternary);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            color: var(--accent);
+            background: var(--accent-dim);
+            border-left-color: var(--accent);
+        }
+
+        .nav-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar-room {
+            margin-top: auto;
+            padding: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .room-label {
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .room-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* ── Hauptinhalt ── */
+        .main {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg-primary);
+        }
+
+        .view {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            padding: 28px 32px;
+            overflow-y: auto;
+            gap: 20px;
+        }
+
+        .view.active {
+            display: flex;
+        }
+
+        .view-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .view-sub {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        /* ── Formulare ── */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-row .btn {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        /* ── Empfänger-Buttons (Room-Auswahl) ── */
+        .room-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .room-btn {
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .room-btn:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
+        .room-btn.selected {
+            background: var(--accent-dim);
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .room-btn.broadcast {
+            background: var(--warning-dim);
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+
+        .room-btn.broadcast.selected {
+            background: var(--warning);
+            color: #000;
+        }
+
+        /* ── Nachrichteneingabe ── */
+        #msgTextarea {
+            min-height: 110px;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .send-row {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        /* ── Toast-Benachrichtigungen ── */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            color: #fff;
+            box-shadow: var(--shadow-md);
+            animation: slideIn 0.3s ease forwards;
+        }
+
+        .toast.success {
+            background: var(--success);
+            color: #000;
+        }
+
+        .toast.error {
+            background: var(--danger);
+        }
+
+        .toast.info {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* ── Zimmer-Liste ── */
+        .rooms-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* ── Sendehistorie-Widget ── */
+        .sent-history {
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .sent-history-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .sent-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            transition: border-color 0.3s;
+        }
+
+        .sent-item.acked {
+            border-color: var(--success);
+        }
+
+        .sent-item-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sent-item-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 3px;
+            flex-wrap: wrap;
+        }
+
+        .sent-item-to {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .sent-item-time {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .sent-item-text {
+            font-size: 13px;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ack-badge {
+            flex-shrink: 0;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 99px;
+            letter-spacing: 0.5px;
+        }
+
+        .ack-badge.ok {
+            background: var(--success-dim);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .ack-badge.pending {
+            background: var(--warning-dim);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        .sent-history-empty {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .room-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+        }
+
+        .room-item-name {
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .room-item-badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 99px;
+            background: var(--success-dim);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .room-item-badge.offline {
+            background: var(--bg-ternary);
+            color: var(--text-muted);
+            border-color: var(--border);
+        }
+
+        /* ── Einstellungen ── */
+        .settings-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .settings-section h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .settings-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .settings-row .form-group {
+            flex: 1;
+        }
+
+        /* ── Setup-Modal ── */
+        .setup-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .setup-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            padding: 40px 48px;
+            max-width: 480px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .setup-card h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .setup-card p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+
+        .setup-logo {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .setup-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            text-align: left;
+        }
+
+        .setup-step-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .conn-error {
+            font-size: 13px;
+            color: var(--danger);
+            margin-top: 8px;
+            display: none;
+        }
+
+        /* ── Notfallknopf ── */
+        .emergency-btn {
+            margin: 12px 16px 16px;
+            padding: 14px 16px;
+            background: linear-gradient(135deg, #7f0000, #cc0000);
+            border: 2px solid #ff2222;
+            border-radius: var(--radius-md);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 800;
+            font-family: var(--font);
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            -webkit-app-region: no-drag;
+            transition: all 0.18s;
+            animation: emergency-pulse 2.2s ease-in-out infinite;
+            box-shadow: 0 0 18px rgba(220, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .emergency-btn:hover {
+            background: linear-gradient(135deg, #aa0000, #ff0000);
+            box-shadow: 0 0 32px rgba(255, 0, 0, 0.7), 0 6px 24px rgba(0, 0, 0, 0.5);
+            transform: scale(1.02);
+        }
+
+        .emergency-btn:active {
+            transform: scale(0.97);
+        }
+
+        @keyframes emergency-pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 16px rgba(220, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 30px rgba(255, 0, 0, 0.75), 0 4px 12px rgba(0, 0, 0, 0.4);
+            }
+        }
+
+        /* ── Notfall-Bestätigungsmodal ── */
+        .emergency-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 5000;
+            backdrop-filter: blur(6px);
+        }
+
+        .emergency-modal-overlay.open {
+            display: flex;
+        }
+
+        .emergency-modal-card {
+            background: linear-gradient(135deg, #1a0000 0%, #2a0000 100%);
+            border: 2px solid #ff2222;
+            border-radius: var(--radius-xl);
+            padding: 40px 48px;
+            max-width: 480px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 0 60px rgba(255, 0, 0, 0.4), 0 24px 64px rgba(0, 0, 0, 0.9);
+            animation: card-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes card-in {
+            from {
+                opacity: 0;
+                transform: scale(0.88) translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .emergency-modal-icon {
+            font-size: 56px;
+            margin-bottom: 12px;
+        }
+
+        .emergency-modal-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: #ff4444;
+            margin-bottom: 10px;
+        }
+
+        .emergency-modal-sub {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+            line-height: 1.6;
+        }
+
+        .emergency-modal-sub strong {
+            color: #fff;
+        }
+
+        .emergency-modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .btn-emergency-confirm {
+            padding: 14px 32px;
+            background: #cc0000;
+            border: 2px solid #ff2222;
+            border-radius: var(--radius-md);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 800;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.18s;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-emergency-confirm:hover {
+            background: #ff0000;
+            box-shadow: 0 0 24px rgba(255, 0, 0, 0.6);
+        }
+
+        .btn-emergency-cancel {
+            padding: 14px 28px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.18s;
+        }
+
+        .btn-emergency-cancel:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ═══════════════ SETUP-MODAL (Erststart) ═══════════════ -->
+    <div class="setup-overlay" id="setupOverlay">
+        <div class="setup-card">
+            <div class="setup-logo">🏥</div>
+            <h1>ZNS einrichten</h1>
+            <p>Willkommen beim Zentralen Nachrichten-System.<br />
+                Bitte richte deinen Arbeitsplatz ein.</p>
+
+            <div class="setup-steps">
+                <div class="form-group">
+                    <div class="setup-step-label">1. Server-Adresse</div>
+                    <div class="input-row">
+                        <input type="text" id="setupHost" value="192.168.10.51" placeholder="z.B. 192.168.10.51" />
+                        <input type="number" id="setupPort" value="8765" style="width:90px;flex-shrink:0" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="setup-step-label">2. Name dieses Arbeitsplatzes</div>
+                    <input type="text" id="setupRoomInput" placeholder="z.B. Empfang, Zimmer 1, EKG-Raum …" />
+                </div>
+
+                <div class="form-group">
+                    <div class="setup-step-label">3. Oder: Vorhandenen Raum wählen</div>
+                    <select id="setupRoomSelect">
+                        <option value="">– Verbindung wird hergestellt … –</option>
+                    </select>
+                </div>
+
+                <div class="conn-error" id="setupError">⚠ Verbindung zum Server fehlgeschlagen.</div>
+
+                <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center"
+                    onclick="setupFinish()">
+                    ✓ Einrichten &amp; Starten
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ HAUPT-APP ═══════════════ -->
+    <div class="app" id="appRoot" style="display:none">
+
+        <!-- Titelleiste -->
+        <header class="titlebar">
+            <span class="titlebar-logo">🏥 ZNS</span>
+            <span class="titlebar-sub">Zentrales Nachrichten-System</span>
+            <div class="titlebar-status">
+                <div class="status-dot" id="statusDot"></div>
+                <span class="status-label" id="statusLabel">Verbinde …</span>
+            </div>
+        </header>
+
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="nav-item active" data-view="send" onclick="switchView('send', this)">
+                <span class="nav-icon">✉️</span> Nachricht senden
+            </div>
+            <div class="nav-item" data-view="rooms" onclick="switchView('rooms', this)">
+                <span class="nav-icon">🚪</span> Zimmer
+            </div>
+            <div class="nav-item" data-view="settings" onclick="switchView('settings', this)">
+                <span class="nav-icon">⚙️</span> Einstellungen
+            </div>
+
+            <!-- 🚨 Notfallknopf -->
+            <button class="emergency-btn" id="emergencyBtn" onclick="showEmergencyModal()">
+                🚨 NOTFALL
+            </button>
+
+            <div class="sidebar-room" id="sidebarRoom">
+                <div class="room-label">Mein Arbeitsplatz</div>
+                <div class="room-name" id="myRoomName">–</div>
+            </div>
+        </nav>
+
+        <!-- Hauptinhalt -->
+        <main class="main">
+
+            <!-- ── Ansicht: Nachricht senden ── -->
+            <div class="view active" id="view-send">
+                <div>
+                    <div class="view-title">Nachricht senden</div>
+                    <div class="view-sub">Wähle einen Empfänger und schreibe deine Nachricht.</div>
+                </div>
+
+                <div class="form-group">
+                    <div class="form-label">Empfänger</div>
+                    <div class="room-grid" id="recipientGrid">
+                        <div class="room-btn broadcast" id="btnBroadcast" onclick="selectRecipient('broadcast', this)">
+                            📢 Alle Zimmer
+                        </div>
+                        <!-- Zimmer werden dynamisch eingefügt -->
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="form-label">Nachricht</div>
+                    <textarea id="msgTextarea" placeholder="z.B. Bitte schnell EKG bei Frau Müller machen …"
+                        maxlength="500"></textarea>
+                    <div class="form-hint" id="charCount">0 / 500 Zeichen</div>
+                </div>
+
+                <div class="send-row">
+                    <button class="btn btn-ghost" onclick="clearMessage()">✕ Leeren</button>
+                    <button class="btn btn-primary btn-lg" id="btnSend" onclick="sendMessage()">
+                        ▶ Senden
+                    </button>
+                </div>
+
+                <!-- Letzte Nachrichten -->
+                <div class="sent-history" id="sentHistory">
+                    <div class="sent-history-title">🕐 Letzte Nachrichten</div>
+                    <div class="sent-history-empty" id="sentHistoryEmpty">Noch keine gesendeten Nachrichten.</div>
+                </div>
+            </div>
+
+            <!-- ── Ansicht: Zimmer verwalten ── -->
+            <div class="view" id="view-rooms">
+                <div>
+                    <div class="view-title">Zimmer verwalten</div>
+                    <div class="view-sub">Alle bekannten Arbeitsplätze im Netzwerk.</div>
+                </div>
+
+                <div class="form-group">
+                    <div class="form-label">Neues Zimmer anlegen</div>
+                    <div class="input-row">
+                        <input type="text" id="newRoomInput" placeholder="Zimmer-Name (z.B. Labor, EKG-Raum …)"
+                            maxlength="40" />
+                        <button class="btn btn-primary" onclick="createRoom()">+ Anlegen</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="form-label">Alle Zimmer</div>
+                    <div class="rooms-list" id="roomsList">
+                        <div style="color:var(--text-muted);font-size:13px">Lade …</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Ansicht: Einstellungen ── -->
+            <div class="view" id="view-settings">
+                <div>
+                    <div class="view-title">Einstellungen</div>
+                    <div class="view-sub">Server-Verbindung und Arbeitsplatz konfigurieren.</div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>🖥 Server-Verbindung</h3>
+                    <div class="settings-row">
+                        <div class="form-group">
+                            <div class="form-label">Server-IP</div>
+                            <input type="text" id="cfgHost" placeholder="192.168.10.51" />
+                        </div>
+                        <div class="form-group" style="width:100px">
+                            <div class="form-label">Port</div>
+                            <input type="number" id="cfgPort" placeholder="8765" />
+                        </div>
+                        <button class="btn btn-primary" onclick="saveServerSettings()">Verbinden</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>🏷 Arbeitsplatz</h3>
+                    <div class="form-group">
+                        <div class="form-label">Aktuelles Zimmer</div>
+                        <select id="cfgRoom">
+                            <option value="">– wählen –</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button class="btn btn-ghost" onclick="changeRoom()">Zimmer wechseln</button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Toast-Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- 🚨 Notfall-Bestätigungsmodal -->
+    <div class="emergency-modal-overlay" id="emergencyModal">
+        <div class="emergency-modal-card">
+            <div class="emergency-modal-icon">🚨</div>
+            <div class="emergency-modal-title">NOTFALL-ALARM AUSLÖSEN?</div>
+            <div class="emergency-modal-sub">
+                Alle anderen Zimmer erhalten sofort eine <strong>Notfall-Nachricht</strong> mit der Bitte, umgehend zu
+                <strong id="emergencyRoomName">diesem Zimmer</strong> zu kommen.<br><br>
+                Erst nach Bestätigung wird der Alarm gesendet.
+            </div>
+            <div class="emergency-modal-actions">
+                <button class="btn-emergency-cancel" id="emergencyCancelBtn" onclick="hideEmergencyModal()">✕
+                    Abbrechen</button>
+                <button class="btn-emergency-confirm" id="emergencyConfirmBtn" onclick="confirmEmergency()">🚨 JETZT
+                    ALARMIEREN</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── Zustand ──────────────────────────────────────────────────
+        let selectedRecipient = null
+        let allRooms = []
+        let myConfig = {}
+
+        // ── Init ─────────────────────────────────────────────────────
+        async function init() {
+            myConfig = await window.zns.getConfig()
+
+            // Event-Listener registrieren
+            window.zns.onConnectionStatus(handleConnectionStatus)
+            window.zns.onRoomsUpdate(handleRoomsUpdate)
+
+            if (myConfig.room_id && myConfig.room_name) {
+                // Bereits konfiguriert
+                showApp()
+            } else {
+                // Erststart
+                showSetup()
+                // Trotzdem verbinden um Zimmerliste zu holen
+                await window.zns.connect({
+                    server_host: myConfig.server_host || '192.168.10.51',
+                    server_port: myConfig.server_port || 8765,
+                })
+            }
+
+            // Sendehistorie live aktualisieren
+            window.zns.onSentMessages(renderSentHistory)
+        }
+
+        function showApp() {
+            document.getElementById('setupOverlay').style.display = 'none'
+            document.getElementById('appRoot').style.display = ''
+            document.getElementById('myRoomName').textContent = myConfig.room_name || '–'
+
+            // Konfigurationsfelder befüllen
+            document.getElementById('cfgHost').value = myConfig.server_host || ''
+            document.getElementById('cfgPort').value = myConfig.server_port || 8765
+
+            window.zns.getRooms()
+            // Sendehistorie beim App-Start laden
+            window.zns.getSentMessages()
+        }
+
+        function showSetup() {
+            document.getElementById('setupOverlay').style.display = 'flex'
+        }
+
+        // ── Setup-Abschluss ───────────────────────────────────────
+        async function setupFinish() {
+            const host = document.getElementById('setupHost').value.trim()
+            const port = parseInt(document.getElementById('setupPort').value) || 8765
+            const nameNew = document.getElementById('setupRoomInput').value.trim()
+            const nameExist = document.getElementById('setupRoomSelect').value
+
+            let roomName = nameNew || nameExist
+            if (!roomName) { showToast('Bitte einen Zimmer-Namen eingeben oder auswählen.', 'error'); return }
+            if (!host) { showToast('Bitte Server-Adresse eingeben.', 'error'); return }
+
+            // Zimmer-ID bestimmen
+            let roomId = null
+            let foundRoom = allRooms.find(r => r.room_name === roomName)
+            if (foundRoom) {
+                roomId = foundRoom.room_id
+            } else {
+                // Neues Zimmer – UUID lokal generieren (Server erstellt es beim Register)
+                roomId = crypto.randomUUID()
+            }
+
+            // Verbinden + registrieren
+            await window.zns.connect({ server_host: host, server_port: port })
+            await window.zns.registerRoom({ room_id: roomId, room_name: roomName })
+
+            myConfig = await window.zns.getConfig()
+            showApp()
+        }
+
+        // ── Verbindungsstatus ─────────────────────────────────────
+        function handleConnectionStatus(status) {
+            const dot = document.getElementById('statusDot')
+            const label = document.getElementById('statusLabel')
+
+            dot.className = 'status-dot'
+
+            switch (status) {
+                case 'connected':
+                    dot.classList.add('connected')
+                    label.textContent = 'Verbunden'
+                    document.getElementById('setupError').style.display = 'none'
+                    break
+                case 'disconnected':
+                    dot.classList.add('disconnected')
+                    label.textContent = 'Getrennt – verbinde …'
+                    break
+                case 'setup-required':
+                    dot.classList.add('setup')
+                    label.textContent = 'Einrichtung erforderlich'
+                    break
+            }
+        }
+
+        // ── Zimmer-Update ─────────────────────────────────────────
+        function handleRoomsUpdate(rooms) {
+            allRooms = rooms
+
+            // Setup-Dropdown befüllen
+            const setupSelect = document.getElementById('setupRoomSelect')
+            setupSelect.innerHTML = '<option value="">– Zimmer wählen –</option>'
+            rooms.forEach(r => {
+                const opt = document.createElement('option')
+                opt.value = r.room_name
+                opt.textContent = r.room_name
+                setupSelect.appendChild(opt)
+            })
+
+            // Einstellungen-Dropdown
+            const cfgRoom = document.getElementById('cfgRoom')
+            cfgRoom.innerHTML = '<option value="">– wählen –</option>'
+            rooms.forEach(r => {
+                const opt = document.createElement('option')
+                opt.value = r.room_id + '|' + r.room_name
+                opt.textContent = r.room_name
+                if (r.room_id === myConfig.room_id) opt.selected = true
+                cfgRoom.appendChild(opt)
+            })
+
+            // Empfänger-Grid aktualisieren (ohne mein eigenes Zimmer)
+            renderRecipientGrid(rooms)
+
+            // Zimmer-Liste aktualisieren
+            renderRoomsList(rooms)
+        }
+
+        // ── Empfänger-Raster ──────────────────────────────────────
+        function renderRecipientGrid(rooms) {
+            const grid = document.getElementById('recipientGrid')
+
+            // Broadcast-Button behalten, Rest neu
+            const bc = document.getElementById('btnBroadcast')
+            grid.innerHTML = ''
+            grid.appendChild(bc)
+
+            rooms.forEach(r => {
+                if (r.room_id === myConfig.room_id) return  // Eigenes Zimmer ausblenden
+                const btn = document.createElement('div')
+                btn.className = 'room-btn'
+                btn.textContent = r.room_name
+                btn.dataset.roomId = r.room_id
+                if (selectedRecipient === r.room_id) btn.classList.add('selected')
+                btn.onclick = () => selectRecipient(r.room_id, btn)
+                grid.appendChild(btn)
+            })
+        }
+
+        function selectRecipient(id, el) {
+            selectedRecipient = id
+            document.querySelectorAll('.room-btn').forEach(b => b.classList.remove('selected'))
+            el.classList.add('selected')
+        }
+
+        // ── Nachricht senden ──────────────────────────────────────
+        async function sendMessage() {
+            const text = document.getElementById('msgTextarea').value.trim()
+
+            if (!selectedRecipient) { showToast('Bitte einen Empfänger auswählen.', 'error'); return }
+            if (!text) { showToast('Bitte eine Nachricht eingeben.', 'error'); return }
+
+            const btn = document.getElementById('btnSend')
+            btn.disabled = true
+            btn.textContent = '…'
+
+            const res = await window.zns.sendMessage({ target_room_id: selectedRecipient, message_text: text })
+
+            btn.disabled = false
+            btn.textContent = '▶ Senden'
+
+            if (res.success) {
+                showToast('✓ Nachricht gesendet!', 'success')
+                document.getElementById('msgTextarea').value = ''
+                document.getElementById('charCount').textContent = '0 / 500 Zeichen'
+            } else {
+                showToast(`Fehler: ${res.error || 'Unbekannt'}`, 'error')
+            }
+        }
+
+        function clearMessage() {
+            document.getElementById('msgTextarea').value = ''
+            document.getElementById('charCount').textContent = '0 / 500 Zeichen'
+        }
+
+        // ── Zimmer anlegen ────────────────────────────────────────
+        async function createRoom() {
+            const name = document.getElementById('newRoomInput').value.trim()
+            if (!name) { showToast('Bitte einen Namen eingeben.', 'error'); return }
+
+            const res = await window.zns.createRoom(name)
+            if (res.success) {
+                document.getElementById('newRoomInput').value = ''
+                showToast(`✓ Zimmer "${name}" erstellt!`, 'success')
+            } else {
+                showToast(res.error || 'Fehler', 'error')
+            }
+        }
+
+        // ── Zimmer-Liste rendern ──────────────────────────────────
+        function renderRoomsList(rooms) {
+            const list = document.getElementById('roomsList')
+            if (!rooms.length) {
+                list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Keine Zimmer vorhanden.</div>'
+                return
+            }
+            list.innerHTML = ''
+            rooms.forEach(r => {
+                const isMine = r.room_id === myConfig.room_id
+                const item = document.createElement('div')
+                item.className = 'room-item'
+                item.innerHTML = `
+        <span style="font-size:16px">🚪</span>
+        <span class="room-item-name">${r.room_name}</span>
+        ${isMine ? '<span class="room-item-badge">Ich</span>' : ''}
+        ${!isMine ? `<button class="btn btn-danger" style="padding:5px 12px;font-size:12px;margin-left:auto" onclick="deleteRoom('${r.room_id}','${r.room_name}')">✕ Löschen</button>` : ''}
+      `
+                list.appendChild(item)
+            })
+        }
+
+        // ── Einstellungen: Server ─────────────────────────────────
+        async function saveServerSettings() {
+            const host = document.getElementById('cfgHost').value.trim()
+            const port = parseInt(document.getElementById('cfgPort').value) || 8765
+            await window.zns.connect({ server_host: host, server_port: port })
+            showToast('Verbindung wird hergestellt …', 'info')
+        }
+
+        async function changeRoom() {
+            const val = document.getElementById('cfgRoom').value
+            if (!val) { showToast('Bitte ein Zimmer auswählen.', 'error'); return }
+            const [roomId, roomName] = val.split('|')
+            await window.zns.registerRoom({ room_id: roomId, room_name: roomName })
+            myConfig.room_id = roomId
+            myConfig.room_name = roomName
+            document.getElementById('myRoomName').textContent = roomName
+            showToast(`✓ Zimmer gewechselt zu: ${roomName}`, 'success')
+        }
+
+        // ── Zimmer löschen ────────────────────────────────────────
+        async function deleteRoom(roomId, roomName) {
+            if (!confirm(`Zimmer "${roomName}" wirklich löschen?\n\nAlle Nachrichten und Bestätigungen für dieses Zimmer werden ebenfalls gelöscht.`)) return
+            const res = await window.zns.deleteRoom(roomId)
+            if (res.success) {
+                showToast(`✓ Zimmer "${roomName}" gelöscht.`, 'success')
+            } else {
+                showToast(res.error || 'Fehler beim Löschen', 'error')
+            }
+        }
+
+        // ── Navigation ────────────────────────────────────────────
+        function switchView(name, el) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'))
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+            document.getElementById('view-' + name).classList.add('active')
+            el.classList.add('active')
+
+            if (name === 'rooms') window.zns.getRooms()
+        }
+
+        // ── Zeichenzähler ─────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('msgTextarea').addEventListener('input', function () {
+                document.getElementById('charCount').textContent = `${this.value.length} / 500 Zeichen`
+            })
+
+            // Enter im Setup-Formular
+            document.getElementById('setupRoomInput').addEventListener('keydown', e => {
+                if (e.key === 'Enter') setupFinish()
+            })
+
+            // Enter für Nachricht senden (Shift+Enter = Zeilenumbruch)
+            document.getElementById('msgTextarea').addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+            })
+
+            // Enter für neues Zimmer
+            document.getElementById('newRoomInput').addEventListener('keydown', e => {
+                if (e.key === 'Enter') createRoom()
+            })
+
+            init()
+        })
+
+        // ── Sendehistorie ─────────────────────────────────────────
+        function renderSentHistory(messages) {
+            const container = document.getElementById('sentHistory')
+            const empty = document.getElementById('sentHistoryEmpty')
+
+            // Alle alten Einträge entfernen (außer Titel und Empty-Hint)
+            Array.from(container.querySelectorAll('.sent-item')).forEach(el => el.remove())
+
+            if (!messages || messages.length === 0) {
+                empty.style.display = ''
+                return
+            }
+            empty.style.display = 'none'
+
+            messages.forEach(msg => {
+                const item = document.createElement('div')
+                item.className = 'sent-item' + (msg.acknowledged ? ' acked' : '')
+                item.dataset.messageId = msg.message_id
+
+                // Zeitstempel formatieren
+                let timeStr = ''
+                try {
+                    const d = new Date(msg.timestamp)
+                    timeStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+                } catch (_) { }
+
+                const isEmergency = msg.message_text && msg.message_text.includes('NOTFALL')
+                const targetLabel = msg.is_broadcast ? '📢 Alle Zimmer' : `→ ${msg.target_room}`
+
+                item.innerHTML = `
+                    <div class="sent-item-content">
+                        <div class="sent-item-meta">
+                            <span class="sent-item-to">${isEmergency ? '🚨' : '✉️'} ${targetLabel}</span>
+                            <span class="sent-item-time">${timeStr}</span>
+                        </div>
+                        <div class="sent-item-text">${msg.message_text}</div>
+                    </div>
+                    <span class="ack-badge ${msg.acknowledged ? 'ok' : 'pending'}">
+                        ${msg.acknowledged ? '✓ Bestätigt' : '⏳ Offen'}
+                    </span>
+                `
+                container.appendChild(item)
+            })
+        }
+
+        // ── Notfall-Modal ─────────────────────────────────────────
+        function showEmergencyModal() {
+            document.getElementById('emergencyRoomName').textContent = myConfig.room_name || 'diesem Zimmer'
+            document.getElementById('emergencyModal').classList.add('open')
+            // Fokus auf Abbrechen-Button setzen (versehentliche Bestätigung verhindern)
+            setTimeout(() => document.getElementById('emergencyCancelBtn').focus(), 50)
+        }
+
+        function hideEmergencyModal() {
+            document.getElementById('emergencyModal').classList.remove('open')
+        }
+
+        async function confirmEmergency() {
+            const confirmBtn = document.getElementById('emergencyConfirmBtn')
+            confirmBtn.disabled = true
+            confirmBtn.textContent = '⏳ Sende …'
+
+            const res = await window.zns.sendEmergency()
+
+            confirmBtn.disabled = false
+            confirmBtn.textContent = '🚨 JETZT ALARMIEREN'
+            hideEmergencyModal()
+
+            if (res.success) {
+                showToast('🚨 Notfall-Alarm gesendet! Alle Zimmer wurden alarmiert.', 'error')
+            } else {
+                showToast(`Fehler: ${res.error || 'Nicht verbunden'}`, 'error')
+            }
+        }
+
+        // Modal schließen bei Klick außerhalb
+        document.getElementById('emergencyModal').addEventListener('click', function (e) {
+            if (e.target === this) hideEmergencyModal()
+        })
+
+        // Escape schließt das Modal
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') hideEmergencyModal()
+        })
+
+        // ── Toast ─────────────────────────────────────────────────
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toastContainer')
+            const toast = document.createElement('div')
+            toast.className = `toast ${type}`
+            toast.textContent = msg
+            container.appendChild(toast)
+            setTimeout(() => toast.remove(), 3200)
+        }
+    </script>
+</body>
+
+</html>
