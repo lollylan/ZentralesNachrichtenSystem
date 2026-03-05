@@ -882,6 +882,8 @@
             window.zns.onSentMessages(renderSentHistory)
         }
 
+        let sentHistoryPollInterval = null
+
         function showApp() {
             document.getElementById('setupOverlay').style.display = 'none'
             document.getElementById('appRoot').style.display = ''
@@ -894,6 +896,13 @@
             window.zns.getRooms()
             // Sendehistorie beim App-Start laden
             window.zns.getSentMessages()
+
+            // Sendehistorie alle 15 Sekunden automatisch aktualisieren (für Lesebestätigungen)
+            if (!sentHistoryPollInterval) {
+                sentHistoryPollInterval = setInterval(() => {
+                    window.zns.getSentMessages()
+                }, 15000)
+            }
         }
 
         function showSetup() {
