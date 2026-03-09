@@ -21,22 +21,23 @@ ZNS ist ein lokales Echtzeit-Nachrichtensystem, das speziell für Arztpraxen und
 | 🚀 **Autostart** | Client startet automatisch mit Windows |
 | 🏠 **Zimmer-Verwaltung** | Arbeitsplätze (Zimmer) anlegen und verwalten |
 | 📊 **Sendehistorie** | Übersicht der letzten gesendeten Nachrichten mit Bestätigungsstatus |
+| 🔐 **TLS-Verschlüsselung** | Alle Nachrichten werden verschlüsselt übertragen (wss://) |
 
 ---
 
 ## 🏗️ Architektur
 
 ```
-┌──────────────┐     WebSocket (ws://)     ┌──────────────┐
-│  Electron    │◄─────────────────────────►│  Python      │
+┌──────────────┐     WebSocket (wss://)    ┌──────────────┐
+│  Electron    │◄────────── TLS ──────────►│  Python      │
 │  Client      │                           │  Server      │
 │  (Desktop)   │                           │  + SQLite DB │
 └──────────────┘                           └──────────────┘
        ▲                                          ▲
        │               LAN-Netzwerk               │
        ▼                                          │
-┌──────────────┐     WebSocket (ws://)            │
-│  Electron    │◄─────────────────────────────────┘
+┌──────────────┐     WebSocket (wss://)           │
+│  Electron    │◄────────── TLS ──────────────────┘
 │  Client      │
 │  (Desktop)   │
 └──────────────┘
@@ -48,7 +49,7 @@ ZNS ist ein lokales Echtzeit-Nachrichtensystem, das speziell für Arztpraxen und
 | **Datenbank** | SQLite | Zimmer, Nachrichten, Bestätigungen |
 | **Client** | Electron (Node.js) | Desktop-App mit Overlay |
 | **Client-UI** | HTML/CSS/JS | Modernes Dark-Mode Interface |
-| **Kommunikation** | WebSocket (`ws://`) | Echtzeit, bidirektional |
+| **Kommunikation** | WebSocket (`wss://`) | Echtzeit, bidirektional, TLS-verschlüsselt |
 
 ---
 
@@ -178,6 +179,7 @@ Die Client-Konfiguration wird bei der Ersteinrichtung erstellt und in `%APPDATA%
 
 - **Kein Internet** – Läuft ausschließlich im LAN
 - **Kein Cloud-Service** – Alle Daten bleiben lokal
+- **TLS-Verschlüsselung** – Alle Nachrichten werden via `wss://` verschlüsselt übertragen; der Server erstellt beim ersten Start automatisch ein selbst-signiertes Zertifikat – keine manuelle Konfiguration nötig
 - **Context Isolation** – Electron nutzt `contextIsolation: true`
 - **Keine node-Integration** – Renderer hat keinen Zugriff auf Node.js APIs
 - **Server = Source of Truth** – Clients vertrauen immer dem Server
