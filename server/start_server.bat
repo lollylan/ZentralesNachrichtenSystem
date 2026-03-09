@@ -14,10 +14,12 @@ REM Virtuelle Umgebung erstellen falls nicht vorhanden
 if not exist "venv\" (
     echo [Setup] Erstelle virtuelle Python-Umgebung...
     python -m venv venv
-    echo [Setup] Installiere Abhaengigkeiten...
-    venv\Scripts\pip install -r requirements.txt
-    echo.
 )
+
+REM Abhaengigkeiten bei jedem Start aktuell halten
+echo [Setup] Pruefe Abhaengigkeiten...
+venv\Scripts\pip install -q -r requirements.txt
+echo.
 
 echo [OK] Starte ZNS-Server...
 echo.

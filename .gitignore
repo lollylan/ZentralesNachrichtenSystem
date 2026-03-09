@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 server/venv/
 server/zns.db
+server/certs/
 
 # Environment
 .env

@@ -6,11 +6,19 @@ Start: python server.py
 """
 
 import asyncio
+import datetime
 import json
 import logging
+import ssl
+from pathlib import Path
 from typing import Any
 
 import websockets
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
 from database import Database
 
 # ──────────────────────────── Logging ────────────────────────────
@@ -223,15 +231,57 @@ async def handle_client(ws: Any):
             await _broadcast_rooms()
 
 
+# ──────────────────────────── TLS ─────────────────────────────
+
+def ensure_ssl_cert(cert_dir: Path):
+    """Erstellt ein self-signed TLS-Zertifikat beim ersten Start automatisch."""
+    cert_dir.mkdir(exist_ok=True)
+    cert_path = cert_dir / "server.crt"
+    key_path = cert_dir / "server.key"
+
+    if cert_path.exists() and key_path.exists():
+        return cert_path, key_path
+
+    log.info("Erstelle selbst-signiertes TLS-Zertifikat …")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "ZNS-Server")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=3650))
+        .sign(key, hashes.SHA256())
+    )
+
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    log.info(f"  Zertifikat gespeichert: {cert_path}")
+    return cert_path, key_path
+
+
 # ──────────────────────────── Main ────────────────────────────
 
 async def main():
     host = "0.0.0.0"
     port = 8765
 
+    # SSL-Kontext aufbauen (Cert wird auto-generiert falls nicht vorhanden)
+    cert_path, key_path = ensure_ssl_cert(Path("certs"))
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+
     log.info("=" * 50)
     log.info("  ZNS – Zentrales Nachrichten-System")
-    log.info(f"  Server läuft auf {host}:{port}")
+    log.info(f"  Server läuft auf {host}:{port} (WSS/TLS)")
     log.info("  Zum Beenden: Strg+C")
     log.info("=" * 50)
 
@@ -239,6 +289,7 @@ async def main():
         handle_client,
         host,
         port,
+        ssl=ssl_context,
         ping_interval=20,
         ping_timeout=10,
     ):

@@ -137,11 +137,11 @@ function showNextOverlay() {
 function connectWebSocket() {
     if (!config.server_host || !config.server_port) return
 
-    const url = `ws://${config.server_host}:${config.server_port}`
+    const url = `wss://${config.server_host}:${config.server_port}`
     console.log(`[WS] Verbinde mit ${url} …`)
 
     try {
-        ws = new WebSocket(url)
+        ws = new WebSocket(url, { rejectUnauthorized: false })
     } catch (e) {
         console.error('[WS] Verbindungsfehler:', e.message)
         scheduleReconnect()
