@@ -1,244 +1,248 @@
+"""
+ZNS – Zentrales Nachrichten-System
+database.py – SQLite-Datenbank
+
+Wichtig: Zimmer werden AUSSCHLIESSLICH über room_id referenziert.
+Der room_name ist nur ein Anzeigename und darf jederzeit geändert werden.
+"""
+
 import sqlite3
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-DB_PATH = "zns.db"
+DB_PATH = Path(__file__).parent / "zns.db"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class Database:
-    """SQLite-Wrapper für ZNS – Zimmer, Nachrichten und Bestätigungen."""
+    """SQLite-Wrapper für Zimmer, Nachrichten und Lesebestätigungen."""
 
     def __init__(self):
         self._init_db()
 
-    def _get_conn(self):
+    def _conn(self):
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _init_db(self):
-        """Erstellt alle Tabellen falls nicht vorhanden."""
-        with self._get_conn() as conn:
+        with self._conn() as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS rooms (
-                    room_id   TEXT PRIMARY KEY,
-                    room_name TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL
+                    room_id    TEXT PRIMARY KEY,
+                    room_name  TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_seen  TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
                     message_id   TEXT PRIMARY KEY,
-                    sender_room  TEXT NOT NULL,
-                    target_room  TEXT NOT NULL,
+                    sender_id    TEXT NOT NULL,
+                    target_id    TEXT NOT NULL,
                     message_text TEXT NOT NULL,
-                    timestamp    TEXT NOT NULL,
-                    is_broadcast INTEGER DEFAULT 0
+                    created_at   TEXT NOT NULL,
+                    is_emergency INTEGER DEFAULT 0,
+                    delivered_at TEXT,
+                    read_at      TEXT
                 );
 
-                CREATE TABLE IF NOT EXISTS acknowledgments (
-                    message_id   TEXT NOT NULL,
-                    ack_by_room  TEXT NOT NULL,
-                    ack_timestamp TEXT NOT NULL,
-                    PRIMARY KEY (message_id, ack_by_room)
-                );
+                CREATE INDEX IF NOT EXISTS idx_msg_target
+                    ON messages (target_id, read_at);
+                CREATE INDEX IF NOT EXISTS idx_msg_pair
+                    ON messages (sender_id, target_id, created_at);
             """)
             conn.commit()
 
-    # ──────────────────────────── ROOMS ────────────────────────────
-
-    def get_all_rooms(self):
-        with self._get_conn() as conn:
-            rows = conn.execute(
-                "SELECT room_id, room_name, created_at FROM rooms ORDER BY room_name"
-            ).fetchall()
-        return [dict(r) for r in rows]
+    # ──────────────────────────── ZIMMER ────────────────────────────
 
     def ensure_room(self, room_id: str, room_name: str) -> dict:
         """
-        Registriert ein Zimmer mit der vom Client vorgegebenen room_id.
-        - Existiert room_id bereits → no-op, bestehenden Eintrag zurückgeben.
-        - Existiert room_name mit anderer ID → room_id und name updaten (Rename nach Neustart)
-        - Neu → einfügen.
-        WICHTIG: Die Client-ID ist führend, damit connected{} und DB übereinstimmen.
+        Trägt ein Zimmer ein oder aktualisiert seinen Namen.
+        Die room_id kommt immer vom Client und ist führend – dadurch
+        stimmen die Server-Verbindungsliste und die Datenbank überein.
         """
-        created_at = datetime.now(timezone.utc).isoformat()
-        with self._get_conn() as conn:
-            # Prüfen ob room_id schon korrekt eingetragen ist
-            existing = conn.execute(
+        with self._conn() as conn:
+            row = conn.execute(
                 "SELECT room_id, room_name FROM rooms WHERE room_id = ?", (room_id,)
             ).fetchone()
-            if existing:
-                return dict(existing)
 
-            # Prüfen ob room_name mit anderer ID existiert → update
-            name_conflict = conn.execute(
-                "SELECT room_id FROM rooms WHERE room_name = ?", (room_name,)
-            ).fetchone()
-            if name_conflict:
-                # Alten Eintrag auf neue room_id aktualisieren
+            if row:
+                # Zimmer umbenannt? Dann Namen aktualisieren.
+                if row["room_name"] != room_name:
+                    conn.execute(
+                        "UPDATE rooms SET room_name = ? WHERE room_id = ?",
+                        (room_name, room_id),
+                    )
                 conn.execute(
-                    "UPDATE rooms SET room_id = ? WHERE room_name = ?",
-                    (room_id, room_name),
+                    "UPDATE rooms SET last_seen = ? WHERE room_id = ?", (_now(), room_id)
                 )
-                conn.commit()
-                return {"room_id": room_id, "room_name": room_name, "created_at": created_at}
+            else:
+                conn.execute(
+                    "INSERT INTO rooms (room_id, room_name, created_at, last_seen) "
+                    "VALUES (?, ?, ?, ?)",
+                    (room_id, room_name, _now(), _now()),
+                )
+            conn.commit()
 
-            # Neu einfügen
-            conn.execute(
-                "INSERT INTO rooms (room_id, room_name, created_at) VALUES (?, ?, ?)",
-                (room_id, room_name, created_at),
+        return {"room_id": room_id, "room_name": room_name}
+
+    def get_all_rooms(self) -> list:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT room_id, room_name, created_at, last_seen "
+                "FROM rooms ORDER BY room_name COLLATE NOCASE"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def rename_room(self, room_id: str, new_name: str) -> bool:
+        with self._conn() as conn:
+            result = conn.execute(
+                "UPDATE rooms SET room_name = ? WHERE room_id = ?", (new_name, room_id)
             )
             conn.commit()
-        return {"room_id": room_id, "room_name": room_name, "created_at": created_at}
-
-    def create_room(self, room_name: str) -> dict:
-        """Legt ein Zimmer mit server-generierter UUID an (für manuelle Erstellung via UI)."""
-        # Prüfen ob Name schon existiert
-        with self._get_conn() as conn:
-            existing = conn.execute(
-                "SELECT room_id, room_name, created_at FROM rooms WHERE room_name = ?",
-                (room_name,),
-            ).fetchone()
-            if existing:
-                return dict(existing)
-
-        room_id = str(uuid.uuid4())
-        created_at = datetime.now(timezone.utc).isoformat()
-        with self._get_conn() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO rooms (room_id, room_name, created_at) VALUES (?, ?, ?)",
-                (room_id, room_name, created_at),
-            )
-            conn.commit()
-        return {"room_id": room_id, "room_name": room_name, "created_at": created_at}
+            return result.rowcount > 0
 
     def delete_room(self, room_id: str) -> bool:
-        """Löscht ein Zimmer aus der Datenbank (inkl. zugehöriger Nachrichten und ACKs)."""
-        with self._get_conn() as conn:
-            # Nachrichten dieses Zimmers holen
-            msg_ids = [
-                row[0]
-                for row in conn.execute(
-                    "SELECT message_id FROM messages WHERE target_room = ? OR sender_room = ?",
-                    (room_id, room_id),
-                ).fetchall()
-            ]
-            # ACKs löschen
-            if msg_ids:
-                placeholders = ",".join("?" * len(msg_ids))
-                conn.execute(
-                    f"DELETE FROM acknowledgments WHERE message_id IN ({placeholders})",
-                    msg_ids,
-                )
-                conn.execute(
-                    f"DELETE FROM messages WHERE message_id IN ({placeholders})",
-                    msg_ids,
-                )
-            # Zimmer löschen
+        """Löscht ein Zimmer samt aller zugehörigen Nachrichten."""
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM messages WHERE sender_id = ? OR target_id = ?",
+                (room_id, room_id),
+            )
             result = conn.execute("DELETE FROM rooms WHERE room_id = ?", (room_id,))
             conn.commit()
             return result.rowcount > 0
 
-    def get_room_by_id(self, room_id: str):
-        with self._get_conn() as conn:
-            row = conn.execute(
-                "SELECT room_id, room_name FROM rooms WHERE room_id = ?", (room_id,)
-            ).fetchone()
-        return dict(row) if row else None
+    def touch_room(self, room_id: str):
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE rooms SET last_seen = ? WHERE room_id = ?", (_now(), room_id)
+            )
+            conn.commit()
 
-    # ──────────────────────────── MESSAGES ────────────────────────────
+    # ──────────────────────────── NACHRICHTEN ────────────────────────────
 
     def save_message(
-        self, sender_room: str, target_room: str, message_text: str, is_broadcast=False
-    ) -> str:
+        self, sender_id: str, target_id: str, text: str, is_emergency: bool = False
+    ) -> dict:
         message_id = str(uuid.uuid4())
-        timestamp = datetime.now(timezone.utc).isoformat()
-        with self._get_conn() as conn:
+        created_at = _now()
+        with self._conn() as conn:
             conn.execute(
-                """INSERT INTO messages
-                   (message_id, sender_room, target_room, message_text, timestamp, is_broadcast)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (message_id, sender_room, target_room, message_text, timestamp, 1 if is_broadcast else 0),
+                "INSERT INTO messages "
+                "(message_id, sender_id, target_id, message_text, created_at, is_emergency) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (message_id, sender_id, target_id, text, created_at, 1 if is_emergency else 0),
             )
             conn.commit()
-        return message_id
+        return {
+            "message_id": message_id,
+            "sender_id": sender_id,
+            "target_id": target_id,
+            "message_text": text,
+            "created_at": created_at,
+            "is_emergency": is_emergency,
+            "delivered_at": None,
+            "read_at": None,
+        }
 
-    def get_pending_messages(self, room_id: str) -> list:
+    def mark_delivered(self, message_id: str) -> str | None:
+        """Setzt den Zustellzeitpunkt (nur beim ersten Mal)."""
+        ts = _now()
+        with self._conn() as conn:
+            result = conn.execute(
+                "UPDATE messages SET delivered_at = ? "
+                "WHERE message_id = ? AND delivered_at IS NULL",
+                (ts, message_id),
+            )
+            conn.commit()
+            return ts if result.rowcount > 0 else None
+
+    def mark_read(self, message_id: str, reader_id: str) -> dict | None:
         """
-        Gibt alle Nachrichten zurück, die an dieses Zimmer adressiert sind
-        und noch NICHT von ihm bestätigt wurden.
+        Markiert eine Nachricht als gelesen. Gibt die Absender-ID zurück,
+        damit der Server den Absender über den Lesestatus informieren kann.
         """
-        with self._get_conn() as conn:
+        ts = _now()
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT sender_id, target_id, read_at FROM messages WHERE message_id = ?",
+                (message_id,),
+            ).fetchone()
+
+            if not row:
+                return None
+            # Nur der Empfänger darf seine eigene Nachricht als gelesen markieren
+            if row["target_id"] != reader_id:
+                return None
+            if row["read_at"]:
+                return {"sender_id": row["sender_id"], "read_at": row["read_at"]}
+
+            conn.execute(
+                "UPDATE messages SET read_at = ?, "
+                "delivered_at = COALESCE(delivered_at, ?) WHERE message_id = ?",
+                (ts, ts, message_id),
+            )
+            conn.commit()
+
+        return {"sender_id": row["sender_id"], "read_at": ts}
+
+    def get_unread_messages(self, room_id: str) -> list:
+        """Alle noch ungelesenen Nachrichten für ein Zimmer (für Reconnect)."""
+        with self._conn() as conn:
             rows = conn.execute(
                 """
-                SELECT m.message_id, m.sender_room, m.message_text, m.timestamp
+                SELECT m.*, r.room_name AS sender_name
                 FROM messages m
-                WHERE m.target_room = ?
-                  AND m.message_id NOT IN (
-                      SELECT a.message_id FROM acknowledgments a
-                      WHERE a.ack_by_room = ?
-                  )
-                ORDER BY m.timestamp ASC
+                LEFT JOIN rooms r ON r.room_id = m.sender_id
+                WHERE m.target_id = ? AND m.read_at IS NULL
+                ORDER BY m.created_at ASC
                 """,
-                (room_id, room_id),
+                (room_id,),
             ).fetchall()
-        return [
-            {
-                "type": "new_message",
-                "message_id": r["message_id"],
-                "sender_name": r["sender_room"],
-                "sender_room": r["sender_room"],
-                "message_text": r["message_text"],
-                "timestamp": r["timestamp"],
-                "requires_ack": True,
-            }
-            for r in rows
-        ]
+        return [self._row_to_message(r) for r in rows]
 
-    # ──────────────────────────── ACKNOWLEDGMENTS ────────────────────────────
-
-    def acknowledge_message(self, message_id: str, ack_by_room: str):
-        ack_timestamp = datetime.now(timezone.utc).isoformat()
-        with self._get_conn() as conn:
-            conn.execute(
-                """INSERT OR IGNORE INTO acknowledgments (message_id, ack_by_room, ack_timestamp)
-                   VALUES (?, ?, ?)""",
-                (message_id, ack_by_room, ack_timestamp),
-            )
-            conn.commit()
-
-    def get_sent_messages(self, sender_room: str, limit: int = 5) -> list:
-        """
-        Gibt die letzten N gesendeten Nachrichten dieses Zimmers zurück,
-        inkl. ob sie von der jeweiligen Zielstube bestätigt wurden.
-        """
-        with self._get_conn() as conn:
+    def get_conversation(self, room_a: str, room_b: str, limit: int = 100) -> list:
+        """Der gemeinsame Chat-Verlauf zweier Zimmer, älteste zuerst."""
+        with self._conn() as conn:
             rows = conn.execute(
                 """
-                SELECT
-                    m.message_id,
-                    m.target_room,
-                    m.message_text,
-                    m.timestamp,
-                    m.is_broadcast,
-                    CASE WHEN a.message_id IS NOT NULL THEN 1 ELSE 0 END AS acknowledged
+                SELECT m.*, r.room_name AS sender_name
                 FROM messages m
-                LEFT JOIN acknowledgments a
-                    ON a.message_id = m.message_id AND a.ack_by_room = m.target_room
-                WHERE m.sender_room = ?
-                ORDER BY m.timestamp DESC
+                LEFT JOIN rooms r ON r.room_id = m.sender_id
+                WHERE (m.sender_id = ? AND m.target_id = ?)
+                   OR (m.sender_id = ? AND m.target_id = ?)
+                ORDER BY m.created_at DESC
                 LIMIT ?
                 """,
-                (sender_room, limit),
+                (room_a, room_b, room_b, room_a, limit),
             ).fetchall()
-        return [
-            {
-                "message_id": r["message_id"],
-                "target_room":  r["target_room"],
-                "message_text": r["message_text"],
-                "timestamp":    r["timestamp"],
-                "is_broadcast": bool(r["is_broadcast"]),
-                "acknowledged": bool(r["acknowledged"]),
-            }
-            for r in rows
-        ]
+        return [self._row_to_message(r) for r in reversed(rows)]
+
+    def get_unread_counts(self, room_id: str) -> dict:
+        """Anzahl ungelesener Nachrichten je Absender – für die Badges in der Zimmerliste."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT sender_id, COUNT(*) AS anzahl FROM messages "
+                "WHERE target_id = ? AND read_at IS NULL GROUP BY sender_id",
+                (room_id,),
+            ).fetchall()
+        return {r["sender_id"]: r["anzahl"] for r in rows}
+
+    @staticmethod
+    def _row_to_message(r: sqlite3.Row) -> dict:
+        return {
+            "message_id": r["message_id"],
+            "sender_id": r["sender_id"],
+            "sender_name": r["sender_name"] or "Unbekannt",
+            "target_id": r["target_id"],
+            "message_text": r["message_text"],
+            "created_at": r["created_at"],
+            "is_emergency": bool(r["is_emergency"]),
+            "delivered_at": r["delivered_at"],
+            "read_at": r["read_at"],
+        }

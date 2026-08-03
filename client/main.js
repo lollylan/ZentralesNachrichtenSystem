@@ -1,71 +1,99 @@
 /**
  * ZNS – Zentrales Nachrichten-System
- * main.js – Electron Hauptprozess
+ * main.js – Electron-Hauptprozess
  *
- * Verantwortlich für:
- *  - Fenster-Management (Hauptfenster + Overlay)
- *  - WebSocket-Verbindung zum Server (via ws-Paket)
- *  - Nachrichten-Queue für mehrere gleichzeitige Overlays
- *  - Reconnect-Logik (alle 3 Sekunden)
- *  - Windows-Autostart
+ * Aufgaben:
+ *  - Hauptfenster (Chat) und Overlay-Fenster verwalten
+ *  - Verbindung zum Server halten, inkl. automatischer Serversuche
+ *  - Eingehende Nachrichten als Vollbild-Overlay anzeigen
  */
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const WebSocket = require('ws')
 
-// ──────────────────────── Zustand ────────────────────────
+const { findeServer } = require('./server-finder')
+
+// ──────────────────────────── Zustand ────────────────────────────
+
 let mainWindow = null
 let overlayWindow = null
+let tray = null
 let ws = null
-let reconnectTimer = null
 
-let messageQueue = []   // Queue unbestätigter Nachrichten
-let overlayShowing = false
+let reconnectTimer = null
+let sucheLaeuft = false
+let beendenErlaubt = false
+
+let nachrichtenSchlange = []   // wartende Nachrichten fürs Overlay
+let overlayAktiv = false
 
 let config = {}
 
-const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json')
+const CONFIG_PATH = () => path.join(app.getPath('userData'), 'config.json')
 
-// ──────────────────────── Konfiguration ───────────────────
+// ──────────────────────────── Konfiguration ────────────────────────────
 
-function loadConfig() {
+const STANDARD_CONFIG = {
+    server_host: '',
+    server_port: 8765,
+    room_id: null,
+    room_name: null,
+}
+
+function ladeConfig() {
     try {
-        if (fs.existsSync(CONFIG_PATH)) {
-            config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+        if (fs.existsSync(CONFIG_PATH())) {
+            config = { ...STANDARD_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_PATH(), 'utf8')) }
         } else {
-            config = {
-                server_host: '192.168.10.51',
-                server_port: 8765,
-                room_id: null,
-                room_name: null,
-            }
+            config = { ...STANDARD_CONFIG }
         }
     } catch (e) {
-        config = { server_host: '192.168.10.51', server_port: 8765 }
+        console.error('[Config] Konnte nicht gelesen werden:', e.message)
+        config = { ...STANDARD_CONFIG }
+    }
+
+    // Jeder Arbeitsplatz bekommt einmalig eine feste Kennung
+    if (!config.room_id) {
+        config.room_id = crypto.randomUUID()
+        speichereConfig()
     }
 }
 
-function saveConfig() {
+function speichereConfig() {
     try {
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
+        fs.writeFileSync(CONFIG_PATH(), JSON.stringify(config, null, 2), 'utf8')
     } catch (e) {
-        console.error('[Config] Fehler beim Speichern:', e.message)
+        console.error('[Config] Konnte nicht gespeichert werden:', e.message)
     }
 }
 
-// ──────────────────────── Fenster ─────────────────────────
+// ──────────────────────────── Nachrichten an die Oberfläche ────────────────────────────
 
-function createMainWindow() {
+function anHauptfenster(kanal, daten) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(kanal, daten)
+    }
+}
+
+function statusMelden(status, text = '') {
+    anHauptfenster('verbindungs-status', { status, text })
+}
+
+// ──────────────────────────── Fenster ────────────────────────────
+
+function erstelleHauptfenster() {
     mainWindow = new BrowserWindow({
-        width: 900,
-        height: 640,
-        minWidth: 620,
-        minHeight: 480,
+        width: 1040,
+        height: 700,
+        minWidth: 780,
+        minHeight: 540,
         title: 'ZNS – Zentrales Nachrichten-System',
         backgroundColor: '#0d1117',
         show: false,
+        icon: path.join(__dirname, 'assets', 'icon.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -73,29 +101,34 @@ function createMainWindow() {
         },
     })
 
+    mainWindow.setMenuBarVisibility(false)
     mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
     mainWindow.once('ready-to-show', () => mainWindow.show())
 
-    // Nicht beenden – nur minimieren (App läuft im Hintergrund)
+    // Schliessen minimiert nur – die App muss im Hintergrund erreichbar bleiben
     mainWindow.on('close', (e) => {
-        e.preventDefault()
-        mainWindow.minimize()
+        if (!beendenErlaubt) {
+            e.preventDefault()
+            mainWindow.hide()
+        }
     })
 }
 
-function createOverlayWindow() {
-    const display = screen.getPrimaryDisplay()
-    const { x, y, width, height } = display.bounds
+function erstelleOverlayFenster() {
+    const { bounds } = screen.getPrimaryDisplay()
 
     overlayWindow = new BrowserWindow({
-        x, y,
-        width, height,
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
         frame: false,
         resizable: false,
         movable: false,
-        focusable: true,
+        minimizable: false,
+        closable: false,
         alwaysOnTop: true,
-        skipTaskbar: false,
+        skipTaskbar: true,
         show: false,
         backgroundColor: '#000000',
         webPreferences: {
@@ -105,111 +138,62 @@ function createOverlayWindow() {
         },
     })
 
+    overlayWindow.setMenuBarVisibility(false)
     overlayWindow.loadFile(path.join(__dirname, 'renderer', 'overlay.html'))
-
-    // Höchste Ebene setzen (über UAC-Dialoge hinaus)
     overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    overlayWindow.setVisibleOnAllWorkspaces(true)
 }
 
-// ──────────────────────── Overlay-Queue ───────────────────
+function erstelleTray() {
+    const iconPfad = path.join(__dirname, 'assets', 'icon.png')
+    let bild = nativeImage.createFromPath(iconPfad)
+    if (bild.isEmpty()) bild = nativeImage.createEmpty()
 
-function showNextOverlay() {
-    if (messageQueue.length === 0) {
-        overlayShowing = false
-        if (overlayWindow) overlayWindow.hide()
+    tray = new Tray(bild)
+    tray.setToolTip('ZNS – Zentrales Nachrichten-System')
+    tray.setContextMenu(Menu.buildFromTemplate([
+        { label: 'Fenster öffnen', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+        { type: 'separator' },
+        {
+            label: 'ZNS beenden',
+            click: () => { beendenErlaubt = true; app.quit() },
+        },
+    ]))
+    tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus() })
+}
+
+// ──────────────────────────── Overlay-Steuerung ────────────────────────────
+
+function zeigeNaechsteNachricht() {
+    if (nachrichtenSchlange.length === 0) {
+        overlayAktiv = false
+        if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide()
         return
     }
 
-    overlayShowing = true
-    const msg = messageQueue.shift()
+    overlayAktiv = true
+    const nachricht = nachrichtenSchlange.shift()
+    nachricht.wartend = nachrichtenSchlange.length
 
-    // Queue-Länge anhängen (damit Overlay "X weitere" anzeigen kann)
-    msg.queueRemaining = messageQueue.length
-
-    overlayWindow.webContents.send('show-message', msg)
+    overlayWindow.webContents.send('zeige-nachricht', nachricht)
     overlayWindow.show()
     overlayWindow.focus()
     overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1)
 }
 
-// ──────────────────────── WebSocket ───────────────────────
-
-function connectWebSocket() {
-    if (!config.server_host || !config.server_port) return
-
-    const url = `wss://${config.server_host}:${config.server_port}`
-    console.log(`[WS] Verbinde mit ${url} …`)
-
-    try {
-        ws = new WebSocket(url, { rejectUnauthorized: false })
-    } catch (e) {
-        console.error('[WS] Verbindungsfehler:', e.message)
-        scheduleReconnect()
-        return
+function nachrichtEinreihen(nachricht) {
+    // Notfälle werden vorgezogen
+    if (nachricht.is_emergency) {
+        nachrichtenSchlange.unshift(nachricht)
+    } else {
+        nachrichtenSchlange.push(nachricht)
     }
-
-    ws.on('open', () => {
-        console.log('[WS] Verbunden!')
-        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-
-        // Zimmerliste immer beim Connect anfordern
-        wsSend({ type: 'get_rooms' })
-
-        if (config.room_id) {
-            // Zimmer registrieren und ausstehende Nachrichten anfragen
-            wsSend({ type: 'register', room_id: config.room_id, room_name: config.room_name })
-            if (mainWindow) mainWindow.webContents.send('connection-status', 'connected')
-        } else {
-            if (mainWindow) mainWindow.webContents.send('connection-status', 'setup-required')
-        }
-    })
-
-    ws.on('message', (raw) => {
-        try {
-            const msg = JSON.parse(raw.toString())
-
-            switch (msg.type) {
-                case 'new_message':
-                    // In Queue schieben; Overlay anzeigen falls frei
-                    // is_emergency-Flag wird direkt aus dem Server-Payload übernommen
-                    messageQueue.push(msg)
-                    if (!overlayShowing) showNextOverlay()
-                    break
-
-                case 'rooms_update':
-                    if (mainWindow) mainWindow.webContents.send('rooms-update', msg.rooms)
-                    if (overlayWindow) overlayWindow.webContents.send('rooms-update', msg.rooms)
-                    break
-
-                case 'sent_messages':
-                    if (mainWindow) mainWindow.webContents.send('sent-messages', msg.messages)
-                    break
-
-                case 'error':
-                    if (mainWindow) mainWindow.webContents.send('server-error', msg.message)
-                    break
-
-                default:
-                    break
-            }
-        } catch (e) {
-            console.error('[WS] Parsefehler:', e.message)
-        }
-    })
-
-    ws.on('close', () => {
-        console.log('[WS] Verbindung getrennt.')
-        if (mainWindow) mainWindow.webContents.send('connection-status', 'disconnected')
-        scheduleReconnect()
-    })
-
-    ws.on('error', (err) => {
-        console.error('[WS] Fehler:', err.message)
-        try { ws.terminate() } catch (_) { }
-    })
+    if (!overlayAktiv) zeigeNaechsteNachricht()
 }
 
-function wsSend(payload) {
+// ──────────────────────────── Verbindung ────────────────────────────
+
+function sende(payload) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(payload))
         return true
@@ -217,115 +201,253 @@ function wsSend(payload) {
     return false
 }
 
-function scheduleReconnect() {
+async function verbinde() {
+    if (sucheLaeuft) return
+    sucheLaeuft = true
+
+    try {
+        const gefunden = await findeServer(config, (text) => statusMelden('suche', text))
+
+        if (!gefunden) {
+            statusMelden('getrennt', 'Server nicht gefunden')
+            planeNeuverbindung()
+            return
+        }
+
+        // Neue Adresse gefunden? Dann dauerhaft merken.
+        if (gefunden.host !== config.server_host) {
+            console.log(`[Server] Neue Adresse gefunden: ${gefunden.host} (${gefunden.quelle})`)
+            config.server_host = gefunden.host
+            config.server_port = gefunden.port
+            speichereConfig()
+            anHauptfenster('server-adresse-geaendert', {
+                host: gefunden.host,
+                quelle: gefunden.quelle,
+            })
+        }
+
+        oeffneVerbindung(gefunden.host, gefunden.port)
+    } catch (e) {
+        console.error('[Verbindung] Fehler:', e.message)
+        planeNeuverbindung()
+    } finally {
+        sucheLaeuft = false
+    }
+}
+
+function oeffneVerbindung(host, port) {
+    const url = `ws://${host}:${port}`
+    console.log(`[WS] Verbinde mit ${url}`)
+
+    try {
+        ws = new WebSocket(url, { handshakeTimeout: 4000 })
+    } catch (e) {
+        console.error('[WS] Konnte nicht verbinden:', e.message)
+        planeNeuverbindung()
+        return
+    }
+
+    ws.on('open', () => {
+        console.log('[WS] Verbunden')
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+
+        if (config.room_name) {
+            sende({ type: 'register', room_id: config.room_id, room_name: config.room_name })
+            statusMelden('verbunden', `${config.server_host}`)
+        } else {
+            statusMelden('einrichtung', 'Bitte Zimmernamen festlegen')
+        }
+    })
+
+    ws.on('message', (roh) => {
+        let daten
+        try {
+            daten = JSON.parse(roh.toString())
+        } catch (e) {
+            return console.error('[WS] Ungültige Antwort:', e.message)
+        }
+        verarbeiteServerNachricht(daten)
+    })
+
+    ws.on('close', () => {
+        console.log('[WS] Verbindung beendet')
+        statusMelden('getrennt', 'Verbindung unterbrochen')
+        planeNeuverbindung()
+    })
+
+    ws.on('error', (fehler) => {
+        console.error('[WS] Fehler:', fehler.message)
+        try { ws.terminate() } catch (_) { }
+    })
+}
+
+function verarbeiteServerNachricht(daten) {
+    switch (daten.type) {
+        case 'registered':
+            statusMelden('verbunden', `${config.server_host}`)
+            sende({ type: 'get_rooms' })
+            break
+
+        case 'new_message':
+            // Jede eingehende Nachricht übernimmt den Bildschirm –
+            // auch Antworten, damit sie garantiert gesehen werden.
+            nachrichtEinreihen(daten.message)
+            anHauptfenster('neue-nachricht', daten.message)
+            break
+
+        case 'messages_sent':
+            anHauptfenster('eigene-nachrichten', daten.messages)
+            break
+
+        case 'read_receipt':
+            anHauptfenster('lesebestaetigung', daten)
+            break
+
+        case 'rooms_update':
+            anHauptfenster('zimmer-liste', { rooms: daten.rooms, unread: daten.unread || {} })
+            if (overlayWindow && !overlayWindow.isDestroyed()) {
+                overlayWindow.webContents.send('zimmer-liste', { rooms: daten.rooms })
+            }
+            break
+
+        case 'conversation':
+            anHauptfenster('verlauf', daten)
+            break
+
+        case 'error':
+            anHauptfenster('server-fehler', daten.message)
+            break
+
+        default:
+            break
+    }
+}
+
+function planeNeuverbindung(verzoegerung = 3000) {
     if (reconnectTimer) return
     reconnectTimer = setTimeout(() => {
         reconnectTimer = null
-        connectWebSocket()
-    }, 3000)
+        verbinde()
+    }, verzoegerung)
 }
 
-// ──────────────────────── IPC Handler ─────────────────────
+// ──────────────────────────── Schnittstelle zur Oberfläche ────────────────────────────
 
-ipcMain.handle('get-config', () => config)
+ipcMain.handle('hole-config', () => ({ ...config }))
 
-ipcMain.handle('save-config', (_, newConfig) => {
-    config = { ...config, ...newConfig }
-    saveConfig()
-    return config
-})
+ipcMain.handle('speichere-einrichtung', async (_, daten) => {
+    if (daten.room_name) config.room_name = daten.room_name.trim()
+    if (daten.server_host !== undefined) config.server_host = daten.server_host.trim()
+    if (daten.server_port) config.server_port = parseInt(daten.server_port, 10) || 8765
+    speichereConfig()
 
-ipcMain.handle('connect', (_, serverConfig) => {
-    config = { ...config, ...serverConfig }
-    saveConfig()
+    // Verbindung neu aufbauen, damit der Name sofort greift
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
     try { ws?.terminate() } catch (_) { }
-    connectWebSocket()
-    return { success: true }
+    ws = null
+    await verbinde()
+
+    return { erfolg: true, config: { ...config } }
 })
 
-ipcMain.handle('register-room', (_, roomData) => {
-    config.room_id = roomData.room_id
-    config.room_name = roomData.room_name
-    saveConfig()
-
-    wsSend({ type: 'register', room_id: config.room_id, room_name: config.room_name })
-
-    if (mainWindow) mainWindow.webContents.send('connection-status', 'connected')
-    return { success: true }
-})
-
-ipcMain.handle('send-message', (_, data) => {
-    const ok = wsSend({
+ipcMain.handle('sende-nachricht', (_, daten) => {
+    const ok = sende({
         type: 'send_message',
-        sender_id: config.room_id,
-        sender_name: config.room_name,
-        target_room_id: data.target_room_id,
-        message_text: data.message_text,
-        timestamp: new Date().toISOString(),
+        target_id: daten.target_id,
+        message_text: daten.message_text,
     })
-    if (ok) {
-        // Sendehistorie nach kurzer Verzögerung automatisch neu laden
-        // (Server hat die Nachricht dann bereits gespeichert)
-        setTimeout(() => wsSend({ type: 'get_sent_messages' }), 150)
-    }
-    return ok ? { success: true } : { success: false, error: 'Nicht verbunden' }
+    return ok ? { erfolg: true } : { erfolg: false, fehler: 'Keine Verbindung zum Server' }
 })
 
-ipcMain.handle('acknowledge-message', (_, messageId) => {
-    wsSend({
-        type: 'ack_message',
-        message_id: messageId,
-        ack_by_room: config.room_id,
-        ack_timestamp: new Date().toISOString(),
+ipcMain.handle('sende-notfall', () => {
+    const ok = sende({ type: 'emergency' })
+    return ok ? { erfolg: true } : { erfolg: false, fehler: 'Keine Verbindung zum Server' }
+})
+
+ipcMain.handle('bestaetige-nachricht', (_, messageId) => {
+    sende({ type: 'mark_read', message_id: messageId })
+    return { erfolg: true }
+})
+
+// Overlay: bestätigen und danach die nächste Nachricht zeigen
+ipcMain.handle('overlay-erledigt', (_, daten) => {
+    if (daten?.message_id) {
+        sende({ type: 'mark_read', message_id: daten.message_id })
+    }
+    if (daten?.antwort && daten.antwort.trim() && daten.sender_id) {
+        sende({
+            type: 'send_message',
+            target_id: daten.sender_id,
+            message_text: daten.antwort.trim(),
+        })
+    }
+    zeigeNaechsteNachricht()
+    return { erfolg: true }
+})
+
+ipcMain.handle('hole-verlauf', (_, partnerId) => {
+    sende({ type: 'get_conversation', partner_id: partnerId })
+    return { erfolg: true }
+})
+
+ipcMain.handle('hole-zimmer', () => {
+    sende({ type: 'get_rooms' })
+    return { erfolg: true }
+})
+
+ipcMain.handle('loesche-zimmer', (_, roomId) => {
+    const ok = sende({ type: 'delete_room', room_id: roomId })
+    return ok ? { erfolg: true } : { erfolg: false, fehler: 'Keine Verbindung zum Server' }
+})
+
+ipcMain.handle('benenne-zimmer-um', (_, neuerName) => {
+    const name = (neuerName || '').trim()
+    if (!name) return { erfolg: false, fehler: 'Kein Name angegeben' }
+    config.room_name = name
+    speichereConfig()
+    sende({ type: 'rename_room', room_name: name })
+    return { erfolg: true }
+})
+
+ipcMain.handle('suche-server-neu', async () => {
+    // Erzwingt eine vollständige Suche, auch wenn eine Adresse gespeichert ist
+    try { ws?.terminate() } catch (_) { }
+    ws = null
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+    await verbinde()
+    return { erfolg: true, host: config.server_host }
+})
+
+// ──────────────────────────── App-Start ────────────────────────────
+
+// Nur eine Instanz zulassen – sonst doppelte Overlays
+const einzelInstanz = app.requestSingleInstanceLock()
+if (!einzelInstanz) {
+    app.quit()
+} else {
+    app.on('second-instance', () => {
+        mainWindow?.show()
+        mainWindow?.focus()
     })
-    // Nächste Nachricht aus der Queue anzeigen
-    showNextOverlay()
+
+    app.whenReady().then(() => {
+        ladeConfig()
+        erstelleHauptfenster()
+        erstelleOverlayFenster()
+        erstelleTray()
+        verbinde()
+
+        if (app.isPackaged) {
+            app.setLoginItemSettings({ openAtLogin: true, openAsHidden: false })
+        }
+    })
+}
+
+app.on('window-all-closed', () => {
+    // Absichtlich leer: die App läuft im Hintergrund weiter
 })
-
-ipcMain.handle('create-room', (_, roomName) => {
-    const ok = wsSend({ type: 'create_room', room_name: roomName })
-    return ok ? { success: true } : { success: false, error: 'Nicht verbunden' }
-})
-
-ipcMain.handle('delete-room', (_, roomId) => {
-    const ok = wsSend({ type: 'delete_room', room_id: roomId })
-    return ok ? { success: true } : { success: false, error: 'Nicht verbunden' }
-})
-
-ipcMain.handle('send-emergency', () => {
-    const ok = wsSend({ type: 'emergency_call' })
-    return ok ? { success: true } : { success: false, error: 'Nicht verbunden' }
-})
-
-ipcMain.handle('get-sent-messages', () => {
-    wsSend({ type: 'get_sent_messages' })
-    return { success: true }
-})
-
-ipcMain.handle('get-rooms', () => {
-    wsSend({ type: 'get_rooms' })
-    return { success: true }
-})
-
-// ──────────────────────── App-Lifecycle ───────────────────
-
-app.whenReady().then(() => {
-    loadConfig()
-    createMainWindow()
-    createOverlayWindow()
-    connectWebSocket()
-
-    // Autostart in Windows (nur im gepackten Modus aktiv)
-    if (app.isPackaged) {
-        app.setLoginItemSettings({ openAtLogin: true, openAsHidden: false })
-    }
-})
-
-// Verhindert das vollständige Beenden beim letzten Fenster
-app.on('window-all-closed', () => { /* absichtlich leer */ })
 
 app.on('before-quit', () => {
-    // Sauberes Trennen vom Server
+    beendenErlaubt = true
     try { ws?.close() } catch (_) { }
 })

@@ -1,51 +1,51 @@
 @echo off
-chcp 65001 > nul
-title ZNS – Build Portable EXE
+REM ================================================================
+REM  ZNS - Client als portable EXE bauen
+REM  Ergebnis: dist\ZNS-win32-x64\  -> auf die Praxis-PCs kopieren
+REM ================================================================
 
-echo ================================================
-echo   ZNS – Zentrales Nachrichten-System
-echo   Erstelle portable Windows-App (ohne Installation)
-echo ================================================
-echo.
-
+title ZNS - Client bauen
 cd /d "%~dp0"
 
-REM Node.js pruefen
-where node >nul 2>&1
+REM --- Node.js vorhanden? ---
+node --version >nul 2>&1
 if errorlevel 1 (
-    echo [FEHLER] Node.js ist nicht installiert!
-    echo Bitte von https://nodejs.org herunterladen.
+    echo.
+    echo  FEHLER: Node.js wurde nicht gefunden.
+    echo  Bitte installieren: https://nodejs.org  ^(LTS-Version^)
+    echo.
     pause
     exit /b 1
 )
 
-echo [1/3] Installiere Abhaengigkeiten...
-call npm install
-if errorlevel 1 ( echo [FEHLER] npm install fehlgeschlagen. & pause & exit /b 1 )
-echo.
+REM --- Abhaengigkeiten installieren ---
+if not exist "node_modules" (
+    echo  Installiere Abhaengigkeiten ^(dauert beim ersten Mal einige Minuten^) ...
+    call npm install
+    if errorlevel 1 (
+        echo  FEHLER: npm install ist fehlgeschlagen.
+        pause
+        exit /b 1
+    )
+    echo.
+)
 
-echo [2/3] Baue portable App (das dauert 1-3 Minuten)...
-call npx electron-packager . ZNS --platform=win32 --arch=x64 --out=dist --overwrite --asar --ignore="dist|build_exe\.bat|start_client\.bat|\.gitignore"
-if errorlevel 1 ( echo [FEHLER] Build fehlgeschlagen. & pause & exit /b 1 )
-echo.
+REM --- Bauen ---
+echo  Baue den Client ...
+call npx electron-packager . ZNS --platform=win32 --arch=x64 --out=dist --overwrite --asar --app-version=2.0.0
+if errorlevel 1 (
+    echo.
+    echo  FEHLER: Der Build ist fehlgeschlagen.
+    pause
+    exit /b 1
+)
 
-echo [3/3] Erstelle ZIP-Archiv...
-powershell -Command "Compress-Archive -Path 'dist\ZNS-win32-x64\*' -DestinationPath 'dist\ZNS-Client-Windows.zip' -Force"
 echo.
-
-echo ================================================
-echo   Ergebnis:
+echo  ============================================================
+echo   Fertig!
 echo.
-echo   Ordner: dist\ZNS-win32-x64\ZNS.exe
-echo   ZIP:    dist\ZNS-Client-Windows.zip
+echo   Den Ordner   dist\ZNS-win32-x64\
+echo   auf jeden Praxis-PC kopieren und ZNS.exe starten.
+echo  ============================================================
 echo.
-echo   Den Ordner "ZNS-win32-x64" ODER das ZIP auf
-echo   die Client-PCs kopieren und ZNS.exe starten!
-echo   (Kein Node.js, kein Electron, keine Installation noetig)
-echo ================================================
-echo.
-
-REM Ordner oeffnen
-explorer dist\ZNS-win32-x64
-
 pause

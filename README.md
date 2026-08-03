@@ -1,191 +1,196 @@
-# 🏥 ZNS – Zentrales Nachrichten-System
+# ZNS – Zentrales Nachrichten-System
 
-**Internes Desktop-Nachrichtensystem für Praxisnetzwerke.**  
-Nachrichten von jedem Arbeitsplatz zu jedem anderen – mit Bestätigungs-Overlay.
+**Internes Nachrichtensystem für die Praxis.**
+Von jedem Zimmer aus jedes andere erreichen – mit Vollbild-Meldung, die bestätigt werden muss.
 
 ---
 
-## 📋 Überblick
+## Was es kann
 
-ZNS ist ein lokales Echtzeit-Nachrichtensystem, das speziell für Arztpraxen und medizinische Einrichtungen entwickelt wurde. Es ermöglicht das Senden von Nachrichten zwischen Arbeitsplätzen (z.B. Empfang → EKG-Raum) über das lokale Netzwerk – **ohne Internetverbindung, ohne Cloud**.
-
-### ✨ Features
-
-| Feature | Beschreibung |
+| Funktion | Beschreibung |
 |---|---|
-| 💬 **Nachrichten** | Text-Nachrichten an einzelne Zimmer oder an alle (Broadcast) |
-| 🔔 **Overlay-Benachrichtigung** | Vollbild-Overlay erscheint bei jeder neuen Nachricht – unübersehbar |
-| ✅ **Bestätigungspflicht** | Overlay verschwindet NUR nach aktivem Klick auf „Bestätigen" |
-| 🚨 **Notfallknopf** | Sofort-Alarm an alle Arbeitsplätze mit einem Klick |
-| 🔄 **Persistenz** | Unbestätigte Nachrichten bleiben nach Neustart erhalten |
-| 🚀 **Autostart** | Client startet automatisch mit Windows |
-| 🏠 **Zimmer-Verwaltung** | Arbeitsplätze (Zimmer) anlegen und verwalten |
-| 📊 **Sendehistorie** | Übersicht der letzten gesendeten Nachrichten mit Bestätigungsstatus |
-| 🔐 **TLS-Verschlüsselung** | Alle Nachrichten werden verschlüsselt übertragen (wss://) |
+| **Chat pro Zimmer** | Jedes Zimmerpaar hat einen fortlaufenden Verlauf zum Nachlesen |
+| **Vollbild-Meldung** | Jede eingehende Nachricht übernimmt den Bildschirm – unübersehbar |
+| **Antworten** | Direkt in der Vollbild-Meldung antworten, ohne das Fenster zu wechseln |
+| **Lesestatus** | ✓ gesendet · ✓✓ zugestellt · ✓✓ blau = gelesen – aktualisiert sich von selbst |
+| **Notfallknopf** | Alarmiert alle Arbeitsplätze und ruft sie zu deinem Zimmer |
+| **Server wird selbst gefunden** | Ändert sich die Server-IP, sucht der Client sie automatisch |
+| **Nichts geht verloren** | Nachrichten an ausgeschaltete PCs werden beim nächsten Start zugestellt |
+| **Autostart** | Der Client startet automatisch mit Windows |
+
+Das System läuft **ausschliesslich im Praxisnetz** – keine Cloud, kein Internet.
 
 ---
 
-## 🏗️ Architektur
+## Aufbau
 
 ```
-┌──────────────┐     WebSocket (wss://)    ┌──────────────┐
-│  Electron    │◄────────── TLS ──────────►│  Python      │
-│  Client      │                           │  Server      │
-│  (Desktop)   │                           │  + SQLite DB │
-└──────────────┘                           └──────────────┘
-       ▲                                          ▲
-       │               LAN-Netzwerk               │
-       ▼                                          │
-┌──────────────┐     WebSocket (wss://)           │
-│  Electron    │◄────────── TLS ──────────────────┘
-│  Client      │
-│  (Desktop)   │
-└──────────────┘
+┌─────────────────┐                    ┌──────────────────┐
+│  Praxis-PC      │                    │  Praxis-Server   │
+│  ZNS.exe        │◄── Praxisnetz ────►│  server.py       │
+│  (jedes Zimmer) │                    │  + Datenbank     │
+└─────────────────┘                    └──────────────────┘
 ```
 
-| Komponente | Technologie | Zweck |
+| Teil | Technik | Aufgabe |
 |---|---|---|
-| **Server** | Python + `websockets` | Nachrichtenverteilung, Persistenz |
-| **Datenbank** | SQLite | Zimmer, Nachrichten, Bestätigungen |
-| **Client** | Electron (Node.js) | Desktop-App mit Overlay |
-| **Client-UI** | HTML/CSS/JS | Modernes Dark-Mode Interface |
-| **Kommunikation** | WebSocket (`wss://`) | Echtzeit, bidirektional, TLS-verschlüsselt |
+| Server | Python + `websockets` | Verteilt Nachrichten, speichert alles |
+| Datenbank | SQLite (`zns.db`) | Zimmer, Nachrichten, Lesestatus |
+| Client | Electron | Fenster, Vollbild-Meldung, Autostart |
 
 ---
 
-## 📂 Projektstruktur
+## Einrichtung
+
+### Schritt 1 – Server auf dem Praxisserver starten
+
+Voraussetzung: **Python 3.9 oder neuer** ([python.org](https://www.python.org/downloads/) – beim Installieren *„Add Python to PATH"* ankreuzen).
+
+```
+server\start_server.bat  doppelklicken
+```
+
+Beim ersten Start richtet sich alles selbst ein. Danach zeigt das Fenster:
+
+```
+  Server-Adresse für die Clients:  192.168.10.51
+  Port:                            8765
+```
+
+Dieses Fenster muss offen bleiben, solange ZNS genutzt wird.
+
+> **Tipp:** Damit der Server nach einem Neustart des Praxisservers automatisch
+> wieder läuft, eine Verknüpfung zu `start_server.bat` in den Autostart-Ordner
+> legen: `Win + R` → `shell:startup` → Verknüpfung hineinziehen.
+
+### Schritt 2 – Client einmalig bauen
+
+Voraussetzung: **Node.js LTS** ([nodejs.org](https://nodejs.org)) – nur auf dem PC, auf dem gebaut wird.
+
+```
+client\build_exe.bat  doppelklicken
+```
+
+Ergebnis: der Ordner `client\dist\ZNS-win32-x64\`
+
+### Schritt 3 – Auf die Praxis-PCs verteilen
+
+1. Den Ordner `ZNS-win32-x64` auf den PC kopieren (z.B. nach `C:\ZNS\`)
+2. `ZNS.exe` starten
+3. Zimmernamen eingeben, z.B. *Empfang* oder *Zimmer 3*
+4. Server-Adresse eintragen – **oder leer lassen**, dann sucht ZNS ihn selbst
+
+Fertig. Keine Installation, keine Adminrechte nötig.
+
+---
+
+## Bedienung
+
+**Nachricht schreiben** – links das Zimmer anklicken, Text eingeben, `Enter`.
+
+**Nachricht empfangen** – der Bildschirm wird übernommen. Zwei Möglichkeiten:
+- **Gelesen** – bestätigt die Nachricht, Meldung verschwindet
+- **Antwort senden** – Text eingeben (`Strg + Enter`), antwortet und bestätigt in einem Schritt
+
+**An alle** – links *„📢 Alle Zimmer"* wählen.
+
+**Notfall** – roter Knopf links unten. Nach einer Sicherheitsabfrage erscheint auf
+allen Bildschirmen ein roter Vollbild-Alarm mit der Aufforderung, zu dir zu kommen.
+
+**Lesestatus** – an den Haken unter der eigenen Nachricht:
+
+| Zeichen | Bedeutung |
+|---|---|
+| ✓ | gesendet, Empfänger-PC ist noch aus |
+| ✓✓ grau | auf dem Bildschirm angekommen |
+| ✓✓ blau | gelesen und bestätigt |
+
+---
+
+## Wenn sich die Server-IP ändert
+
+Das ist der häufigste Störfall im Praxisnetz: Der Server bekommt vom Router
+eine neue Adresse, z.B. `…51` wird zu `…52`. **Der Client löst das selbst.**
+
+Er sucht in drei Stufen:
+
+| Stufe | Vorgehen | Dauer |
+|---|---|---|
+| 1 | Die zuletzt bekannte Adresse probieren | ~0,3 s |
+| 2 | Rundruf ins Netz – der Server meldet sich mit seiner neuen Adresse | ~1,5 s |
+| 3 | Nachbaradressen durchprobieren: `…51` → `…50`, `…52`, `…49`, `…53` … bis ±10 | ~2 s |
+
+Sobald der Server gefunden ist, merkt sich der Client die neue Adresse dauerhaft
+und meldet kurz: *„Server unter neuer Adresse gefunden"*.
+
+Die Suche läuft automatisch bei jedem Verbindungsverlust. Über den Knopf
+**„Server suchen"** oben rechts lässt sie sich jederzeit von Hand anstossen.
+
+> Damit das Problem gar nicht erst auftritt, ist eine **feste IP-Adresse** für den
+> Praxisserver die sauberste Lösung – meist im Router unter *DHCP-Reservierung*
+> einstellbar. Die automatische Suche ist das Sicherheitsnetz, falls das nicht möglich ist.
+
+---
+
+## Ports
+
+| Port | Art | Wofür |
+|---|---|---|
+| 8765 | TCP | Nachrichten (WebSocket) |
+| 8766 | UDP | Automatische Serversuche |
+
+Beide müssen in der Windows-Firewall des **Servers** für das lokale Netz freigegeben
+sein. Beim ersten Start fragt Windows danach – hier *„Privates Netzwerk zulassen"* wählen.
+
+---
+
+## Häufige Fragen
+
+**Der Client findet den Server nicht.**
+Läuft `start_server.bat` auf dem Praxisserver? Sind beide PCs im selben Netz?
+Firewall auf dem Server für Port 8765 (TCP) und 8766 (UDP) freigegeben?
+
+**Ein Zimmer wird als offline angezeigt.**
+Der PC ist aus oder ZNS läuft dort nicht. Nachrichten dorthin gehen trotzdem raus
+und werden beim nächsten Start des PCs sofort angezeigt.
+
+**Zimmername ändern.**
+Oben rechts *„Umbenennen"*. Der Verlauf bleibt erhalten.
+
+**Nachrichten sind nicht verschlüsselt.**
+Bewusst so: Das System läuft nur im internen Praxisnetz und hat keine Verbindung
+nach aussen. Verschlüsselung würde nur Zertifikatswarnungen und Fehlerquellen
+schaffen, ohne im abgeschlossenen Netz Sicherheit hinzuzugewinnen.
+
+**Wo liegen die Daten?**
+Alle Nachrichten liegen in `server\zns.db` auf dem Praxisserver. Diese Datei
+gehört in die Datensicherung – und niemals in ein öffentliches Repository.
+
+---
+
+## Projektstruktur
 
 ```
 ZNS/
-├── README.md               # Dieses Dokument
-├── gemini.md               # Projektverfassung
-├── .env                    # Server-Konfiguration (HOST, PORT)
-├── architecture/           # SOPs (Standard Operating Procedures)
-│   ├── server_sop.md
-│   ├── client_sop.md
-│   └── database_sop.md
-├── server/                 # Python WebSocket-Server
-│   ├── server.py           # Hauptserver
-│   ├── database.py         # SQLite-Datenbankmodul
-│   ├── requirements.txt    # Python-Abhängigkeiten
-│   └── start_server.bat    # Server starten (Windows)
-└── client/                 # Electron Desktop-Client
-    ├── main.js             # Electron Main Process
-    ├── preload.js          # IPC-Bridge (Sicherheit)
-    ├── package.json        # Node.js Konfiguration
-    ├── build_exe.bat       # Portable EXE erstellen
-    ├── assets/             # Icons
-    └── renderer/           # UI
-        ├── index.html      # Hauptfenster
-        ├── overlay.html    # Bestätigungs-Overlay
-        └── style.css       # Design-System
+├── server/
+│   ├── server.py           Der Server
+│   ├── database.py         Datenbank
+│   ├── requirements.txt    Python-Pakete
+│   └── start_server.bat    Server starten
+├── client/
+│   ├── main.js             Hauptprozess, Verbindung, Overlay-Steuerung
+│   ├── server-finder.js    Automatische Serversuche
+│   ├── preload.js          Brücke zur Oberfläche
+│   ├── build_exe.bat       EXE bauen
+│   └── renderer/
+│       ├── index.html      Hauptfenster (Chat)
+│       ├── overlay.html    Vollbild-Meldung
+│       └── style.css       Gestaltung
+└── Alt/                    Vorherige Fassung (Archiv)
 ```
 
 ---
 
-## 🚀 Installation & Setup
+## Lizenz
 
-### Voraussetzungen
-
-| Komponente | Benötigt auf | Version |
-|---|---|---|
-| **Python** | Server-PC | ≥ 3.9 |
-| **Node.js** | Build-PC (nur einmalig zum Bauen) | ≥ 18 |
-| **LAN** | Alle PCs | – |
-
-### 1. Server einrichten
-
-```bash
-# Repository klonen
-git clone https://github.com/lollylan/ZentralesNachrichtenSystem.git
-cd ZentralesNachrichtenSystem
-
-#  Python-Umgebung einrichten
-cd server
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-
-# .env-Datei anpassen (im Projektordner)
-# SERVER_HOST=192.168.10.51   ← IP des Server-PCs
-# SERVER_PORT=8765
-
-# Server starten
-python server.py
-# ODER: start_server.bat doppelklicken
-```
-
-### 2. Client bauen (einmalig)
-
-```bash
-cd client
-npm install
-
-# Portable EXE erstellen
-# ODER: build_exe.bat doppelklicken
-npx electron-packager . ZNS --platform=win32 --arch=x64 --out=dist --overwrite --asar
-```
-
-### 3. Client auf Arbeitsplätze verteilen
-
-1. Den Ordner `client/dist/ZNS-win32-x64/` auf den Client-PC kopieren
-2. `ZNS.exe` doppelklicken
-3. Beim ersten Start: Server-IP eingeben und Arbeitsplatz-Name wählen
-4. **Fertig!** ✅ Keine Installation nötig.
-
----
-
-## 💡 Nutzung
-
-### Nachricht senden
-1. **Empfänger** wählen (einzelnes Zimmer oder „Alle Zimmer")
-2. **Nachricht** eingeben
-3. **Senden** klicken
-
-### Nachricht empfangen
-- Ein **Vollbild-Overlay** erscheint automatisch
-- Nachricht lesen → **„Bestätigen"** klicken
-- Das Overlay verschwindet erst nach Bestätigung
-
-### Notfall
-- **🚨 NOTFALL** Button in der Sidebar
-- Sendet sofort einen Alarm an **alle** Arbeitsplätze
-- Erfordert Bestätigung vor dem Senden (Sicherheit)
-
----
-
-## ⚙️ Konfiguration
-
-### Server (.env)
-```env
-SERVER_HOST=192.168.10.51
-SERVER_PORT=8765
-```
-
-### Client (automatisch bei Erststart)
-Die Client-Konfiguration wird bei der Ersteinrichtung erstellt und in `%APPDATA%/zns-client/config.json` gespeichert:
-```json
-{
-  "server_host": "192.168.10.51",
-  "server_port": 8765,
-  "room_id": "uuid",
-  "room_name": "Empfang"
-}
-```
-
----
-
-## 🔒 Sicherheit & Design-Entscheidungen
-
-- **Kein Internet** – Läuft ausschließlich im LAN
-- **Kein Cloud-Service** – Alle Daten bleiben lokal
-- **TLS-Verschlüsselung** – Alle Nachrichten werden via `wss://` verschlüsselt übertragen; der Server erstellt beim ersten Start automatisch ein selbst-signiertes Zertifikat – keine manuelle Konfiguration nötig
-- **Context Isolation** – Electron nutzt `contextIsolation: true`
-- **Keine node-Integration** – Renderer hat keinen Zugriff auf Node.js APIs
-- **Server = Source of Truth** – Clients vertrauen immer dem Server
-
----
-
-## 📝 Lizenz
-
-MIT License – © 2026 lolly
+MIT

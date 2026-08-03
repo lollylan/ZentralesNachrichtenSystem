@@ -2,356 +2,350 @@
 <html lang="de">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZNS – Nachricht</title>
-  <link rel="stylesheet" href="style.css" />
-  <style>
-    /* ── Overlay-spezifisches Styling ── */
-    html,
-    body {
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      user-select: none;
-    }
+    <meta charset="UTF-8" />
+    <title>ZNS – Nachricht</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        html,
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: rgba(3, 6, 12, 0.97);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+        }
 
-    /* Hintergrund-Puls */
-    .bg-pulse {
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(ellipse at center,
-          rgba(245, 158, 11, 0.08) 0%,
-          rgba(0, 0, 0, 0) 70%);
-      animation: bgpulse 2s ease-in-out infinite;
-    }
+        /* Pulsierender Hintergrund */
+        .hintergrund {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center,
+                    rgba(245, 158, 11, 0.10) 0%,
+                    rgba(0, 0, 0, 0) 70%);
+            animation: pulsieren 2.2s ease-in-out infinite;
+            pointer-events: none;
+        }
 
-    @keyframes bgpulse {
+        @keyframes pulsieren {
 
-      0%,
-      100% {
-        opacity: 0.6;
-      }
+            0%,
+            100% {
+                opacity: 0.5;
+            }
 
-      50% {
-        opacity: 1;
-      }
-    }
+            50% {
+                opacity: 1;
+            }
+        }
 
-    /* Hauptkarte */
-    .overlay-card {
-      position: relative;
-      z-index: 10;
-      background: linear-gradient(135deg, #1a1a0e 0%, #1a1200 100%);
-      border: 2px solid var(--warning);
-      border-radius: var(--radius-xl);
-      padding: 48px 56px;
-      max-width: 680px;
-      width: 90vw;
-      text-align: center;
-      box-shadow:
-        0 0 0 1px rgba(245, 158, 11, 0.2),
-        0 0 40px rgba(245, 158, 11, 0.2),
-        0 24px 64px rgba(0, 0, 0, 0.8);
-      animation: card-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
+        /* Nachrichtenkarte */
+        .karte {
+            position: relative;
+            z-index: 10;
+            background: linear-gradient(150deg, #1b1710 0%, #14100a 100%);
+            border: 2px solid var(--warning);
+            border-radius: var(--radius-xl);
+            padding: 44px 52px 36px;
+            width: min(760px, 88vw);
+            max-height: 88vh;
+            overflow-y: auto;
+            text-align: center;
+            box-shadow:
+                0 0 0 1px rgba(245, 158, 11, 0.18),
+                0 0 60px rgba(245, 158, 11, 0.18),
+                0 30px 80px rgba(0, 0, 0, 0.85);
+            animation: karte-rein 0.32s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
 
-    @keyframes card-in {
-      from {
-        opacity: 0;
-        transform: scale(0.85) translateY(20px);
-      }
+        @keyframes karte-rein {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(18px);
+            }
 
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
 
-    /* Glühender Rand */
-    .overlay-card::before {
-      content: '';
-      position: absolute;
-      inset: -1px;
-      border-radius: calc(var(--radius-xl) + 1px);
-      background: linear-gradient(135deg, var(--warning), transparent, var(--warning));
-      z-index: -1;
-      opacity: 0.5;
-      animation: border-glow 2s ease-in-out infinite;
-    }
+        .symbol {
+            font-size: 46px;
+            display: block;
+            margin-bottom: 10px;
+        }
 
-    @keyframes border-glow {
+        .kennzeichen {
+            display: inline-block;
+            background: var(--warning);
+            color: #241900;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1.6px;
+            text-transform: uppercase;
+            padding: 5px 16px;
+            border-radius: 99px;
+            margin-bottom: 18px;
+        }
 
-      0%,
-      100% {
-        opacity: 0.3;
-      }
+        .absender {
+            font-size: 13px;
+            color: var(--text-secondary);
+            letter-spacing: 0.4px;
+        }
 
-      50% {
-        opacity: 0.7;
-      }
-    }
+        .absender strong {
+            color: var(--warning);
+            font-size: 16px;
+        }
 
-    /* Icon */
-    .overlay-icon {
-      font-size: 52px;
-      margin-bottom: 8px;
-      display: block;
-      animation: wiggle 1s ease-in-out 0.3s 2;
-    }
+        .nachricht {
+            font-size: 27px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.35;
+            margin: 22px 0 28px;
+            word-break: break-word;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
 
-    @keyframes wiggle {
+        /* Antwortbereich */
+        .antwort-bereich {
+            margin-bottom: 22px;
+            text-align: left;
+        }
 
-      0%,
-      100% {
-        transform: rotate(0deg);
-      }
+        .antwort-bereich textarea {
+            background: rgba(0, 0, 0, 0.35);
+            border-color: var(--border-light);
+            min-height: 74px;
+            font-size: 16px;
+            user-select: text;
+        }
 
-      25% {
-        transform: rotate(-8deg);
-      }
+        .antwort-bereich textarea:focus {
+            border-color: var(--warning);
+            box-shadow: 0 0 0 3px var(--warning-dim);
+        }
 
-      75% {
-        transform: rotate(8deg);
-      }
-    }
+        .antwort-hinweis {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 7px;
+            text-align: right;
+        }
 
-    /* Badge: "Neue Nachricht" */
-    .overlay-badge {
-      display: inline-block;
-      background: var(--warning);
-      color: #000;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      padding: 4px 14px;
-      border-radius: 99px;
-      margin-bottom: 20px;
-    }
+        .knopfreihe {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
 
-    /* Absender */
-    .overlay-sender {
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin-bottom: 6px;
-      letter-spacing: 0.5px;
-    }
+        .fusszeile {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
 
-    .overlay-sender strong {
-      color: var(--warning);
-      font-size: 15px;
-    }
+        .wartend {
+            background: var(--bg-ternary);
+            border: 1px solid var(--border);
+            padding: 3px 12px;
+            border-radius: 99px;
+        }
 
-    /* Nachrichtentext */
-    .overlay-message {
-      font-size: 26px;
-      font-weight: 700;
-      color: #fff;
-      line-height: 1.35;
-      margin: 20px 0 36px;
-      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-      word-break: break-word;
-    }
+        /* ── Notfall-Darstellung ── */
 
-    /* Bestätigen-Button */
-    .btn-confirm {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      padding: 16px 48px;
-      background: var(--success);
-      color: #000;
-      border: none;
-      border-radius: var(--radius-md);
-      font-size: 18px;
-      font-weight: 700;
-      font-family: var(--font);
-      cursor: pointer;
-      transition: all 0.2s;
-      box-shadow: 0 4px 20px rgba(63, 185, 80, 0.4);
-      letter-spacing: 0.3px;
-    }
+        body.notfall .hintergrund {
+            background: radial-gradient(ellipse at center,
+                    rgba(220, 0, 0, 0.18) 0%,
+                    rgba(0, 0, 0, 0) 70%);
+            animation: pulsieren 0.85s ease-in-out infinite;
+        }
 
-    .btn-confirm:hover {
-      background: #52d76a;
-      box-shadow: 0 6px 32px rgba(63, 185, 80, 0.6);
-      transform: translateY(-2px);
-    }
+        body.notfall .karte {
+            background: linear-gradient(150deg, #1f0505 0%, #140202 100%);
+            border-color: #ff2f2f;
+            box-shadow:
+                0 0 0 1px rgba(255, 47, 47, 0.3),
+                0 0 70px rgba(220, 0, 0, 0.45),
+                0 30px 80px rgba(0, 0, 0, 0.9);
+        }
 
-    .btn-confirm:active {
-      transform: scale(0.97);
-    }
+        body.notfall .kennzeichen {
+            background: #ff2f2f;
+            color: #fff;
+            font-size: 13px;
+            letter-spacing: 2.4px;
+            padding: 6px 20px;
+        }
 
-    /* Queue-Anzeige */
-    .overlay-queue {
-      margin-top: 20px;
-      font-size: 12px;
-      color: var(--text-muted);
-    }
+        body.notfall .absender strong {
+            color: #ff6b6b;
+        }
 
-    .overlay-queue span {
-      background: var(--bg-ternary);
-      border: 1px solid var(--border);
-      padding: 3px 10px;
-      border-radius: 99px;
-    }
+        body.notfall .symbol {
+            animation: warnen 0.6s ease-in-out infinite alternate;
+        }
 
-    /* Zeitstempel */
-    .overlay-time {
-      margin-top: 12px;
-      font-size: 12px;
-      color: var(--text-muted);
-    }
+        @keyframes warnen {
+            from {
+                transform: scale(1) rotate(-5deg);
+            }
 
-    /* ── Notfall-Variante: überschreibt Farben ── */
-    body.is-emergency .bg-pulse {
-      background: radial-gradient(ellipse at center,
-          rgba(220, 0, 0, 0.15) 0%,
-          rgba(0, 0, 0, 0) 70%);
-      animation: bgpulse-red 0.9s ease-in-out infinite;
-    }
+            to {
+                transform: scale(1.12) rotate(5deg);
+            }
+        }
 
-    @keyframes bgpulse-red {
-
-      0%,
-      100% {
-        opacity: 0.5;
-      }
-
-      50% {
-        opacity: 1;
-      }
-    }
-
-    body.is-emergency .overlay-card {
-      background: linear-gradient(135deg, #1a0000 0%, #2a0000 100%);
-      border-color: #ff2222;
-      box-shadow:
-        0 0 0 1px rgba(255, 34, 34, 0.3),
-        0 0 50px rgba(220, 0, 0, 0.5),
-        0 24px 64px rgba(0, 0, 0, 0.9);
-    }
-
-    body.is-emergency .overlay-card::before {
-      background: linear-gradient(135deg, #ff2222, transparent, #ff2222);
-    }
-
-    body.is-emergency .overlay-badge {
-      background: #ff2222;
-      color: #fff;
-      font-size: 13px;
-      letter-spacing: 2px;
-      padding: 5px 18px;
-    }
-
-    body.is-emergency .overlay-sender strong {
-      color: #ff5555;
-    }
-
-    body.is-emergency .overlay-icon {
-      animation: emergency-shake 0.5s ease-in-out infinite alternate;
-    }
-
-    @keyframes emergency-shake {
-      0% {
-        transform: rotate(-6deg) scale(1.05);
-      }
-
-      100% {
-        transform: rotate(6deg) scale(1.1);
-      }
-    }
-  </style>
+        body.notfall .antwort-bereich textarea:focus {
+            border-color: #ff2f2f;
+            box-shadow: 0 0 0 3px var(--danger-dim);
+        }
+    </style>
 </head>
 
 <body>
 
-  <div class="bg-pulse"></div>
+    <div class="hintergrund"></div>
 
-  <div class="overlay-card" id="card">
-    <span class="overlay-icon" id="icon">📩</span>
-    <div class="overlay-badge">Neue Nachricht</div>
+    <div class="karte" id="karte">
+        <span class="symbol" id="symbol">✉️</span>
+        <div class="kennzeichen" id="kennzeichen">Neue Nachricht</div>
 
-    <div class="overlay-sender">
-      Von: <strong id="sender">–</strong>
+        <div class="absender">von <strong id="absender">–</strong></div>
+
+        <div class="nachricht" id="nachricht">Lade …</div>
+
+        <div class="antwort-bereich">
+            <label for="antwort">Antwort (optional)</label>
+            <textarea id="antwort" placeholder="Hier kurz antworten …" maxlength="500"></textarea>
+            <div class="antwort-hinweis">Strg + Enter zum Senden</div>
+        </div>
+
+        <div class="knopfreihe">
+            <button class="btn btn-success btn-lg" id="btnBestaetigen">✓&nbsp; Gelesen</button>
+            <button class="btn btn-primary btn-lg" id="btnAntworten" disabled>➤&nbsp; Antwort senden</button>
+        </div>
+
+        <div class="fusszeile">
+            <span id="uhrzeit"></span>
+            <span class="wartend" id="wartend" style="display:none"></span>
+        </div>
     </div>
 
-    <div class="overlay-message" id="message">
-      Lade…
-    </div>
+    <script>
+        let aktuelleNachricht = null
+        let gesendet = false
 
-    <button class="btn-confirm" id="btnConfirm" onclick="confirm()">
-      ✓ &nbsp;Bestätigen
-    </button>
+        const el = (id) => document.getElementById(id)
 
-    <div class="overlay-queue" id="queueInfo" style="display:none">
-      <span id="queueText"></span>
-    </div>
+        // ── Eingehende Nachricht anzeigen ──────────────────────────
+        window.zns.beiZeigeNachricht((msg) => {
+            aktuelleNachricht = msg
+            gesendet = false
 
-    <div class="overlay-time" id="timeInfo"></div>
-  </div>
+            const istNotfall = !!msg.is_emergency
+            document.body.classList.toggle('notfall', istNotfall)
 
-  <script>
-    let currentMessageId = null
+            el('symbol').textContent = istNotfall ? '🚨' : '✉️'
+            el('kennzeichen').textContent = istNotfall ? 'Notfall' : 'Neue Nachricht'
+            el('absender').textContent = msg.sender_name || 'Unbekannt'
+            el('nachricht').textContent = msg.message_text || ''
 
-    // Nachricht anzeigen
-    window.zns.onShowMessage((msg) => {
-      currentMessageId = msg.message_id
+            // Antwortfeld leeren und für die Eingabe vorbereiten
+            const antwort = el('antwort')
+            antwort.value = ''
+            el('btnAntworten').disabled = true
 
-      // ─ Notfall-Modus umschalten ─
-      const isEmergency = !!msg.is_emergency
-      document.body.classList.toggle('is-emergency', isEmergency)
-      document.getElementById('icon').textContent = isEmergency ? '🚨' : '📩'
-      document.querySelector('.overlay-badge').textContent = isEmergency ? '🚨 NOTFALL' : 'Neue Nachricht'
+            // Uhrzeit
+            el('uhrzeit').textContent = zeitFormat(msg.created_at)
 
-      document.getElementById('sender').textContent = msg.sender_name || 'Unbekannt'
-      document.getElementById('message').textContent = msg.message_text || ''
+            // Hinweis auf weitere wartende Nachrichten
+            const wartend = el('wartend')
+            if (msg.wartend > 0) {
+                wartend.textContent =
+                    msg.wartend === 1 ? '1 weitere Nachricht wartet' : `${msg.wartend} weitere Nachrichten warten`
+                wartend.style.display = 'inline-block'
+            } else {
+                wartend.style.display = 'none'
+            }
 
-      // Zeitstempel formatieren
-      if (msg.timestamp) {
-        try {
-          const d = new Date(msg.timestamp)
-          document.getElementById('timeInfo').textContent =
-            d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-        } catch (_) { }
-      }
+            // Karte neu einblenden
+            const karte = el('karte')
+            karte.style.animation = 'none'
+            void karte.offsetWidth
+            karte.style.animation = ''
 
-      // Queue-Info
-      const qi = document.getElementById('queueInfo')
-      const qt = document.getElementById('queueText')
-      if (msg.queueRemaining > 0) {
-        qt.textContent = `${msg.queueRemaining} weitere Nachricht${msg.queueRemaining > 1 ? 'en' : ''} wartet`
-        qi.style.display = 'block'
-      } else {
-        qi.style.display = 'none'
-      }
+            karte.scrollTop = 0
+            setTimeout(() => antwort.focus(), 120)
+        })
 
-      // Karte neu animieren
-      const card = document.getElementById('card')
-      card.style.animation = 'none'
-      void card.offsetWidth  // reflow
-      card.style.animation = ''
-    })
+        function zeitFormat(iso) {
+            if (!iso) return ''
+            try {
+                return new Date(iso).toLocaleTimeString('de-DE', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                })
+            } catch (_) {
+                return ''
+            }
+        }
 
-    function confirm() {
-      if (!currentMessageId) return
-      window.zns.acknowledgeMessage(currentMessageId)
-      currentMessageId = null
-    }
+        // ── Erledigen (mit oder ohne Antwort) ──────────────────────
+        function erledigen(mitAntwort) {
+            if (!aktuelleNachricht || gesendet) return
+            gesendet = true
 
-    // Tastatur: Enter oder Leertaste bestätigen
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault()
-        confirm()
-      }
-    })
-  </script>
+            const text = mitAntwort ? el('antwort').value.trim() : ''
+
+            window.zns.overlayErledigt({
+                message_id: aktuelleNachricht.message_id,
+                sender_id: aktuelleNachricht.sender_id,
+                antwort: text,
+            })
+
+            aktuelleNachricht = null
+            el('antwort').value = ''
+            el('btnAntworten').disabled = true
+        }
+
+        el('btnBestaetigen').addEventListener('click', () => erledigen(false))
+        el('btnAntworten').addEventListener('click', () => erledigen(true))
+
+        // Antwort-Knopf nur aktiv, wenn wirklich Text da ist
+        el('antwort').addEventListener('input', (e) => {
+            el('btnAntworten').disabled = e.target.value.trim().length === 0
+        })
+
+        // ── Tastatur ───────────────────────────────────────────────
+        document.addEventListener('keydown', (e) => {
+            const imTextfeld = document.activeElement === el('antwort')
+            const hatText = el('antwort').value.trim().length > 0
+
+            // Strg + Enter: Antwort senden
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault()
+                erledigen(hatText)
+                return
+            }
+
+            // Enter ausserhalb des Textfelds: nur bestätigen
+            if (e.key === 'Enter' && !imTextfeld) {
+                e.preventDefault()
+                erledigen(hatText)
+            }
+        })
+    </script>
 </body>
 
 </html>

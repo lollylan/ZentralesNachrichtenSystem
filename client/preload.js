@@ -1,70 +1,60 @@
 /**
  * ZNS – Zentrales Nachrichten-System
- * preload.js – Sicherer IPC-Bridge zwischen Main und Renderer
+ * preload.js – Sichere Brücke zwischen Oberfläche und Hauptprozess
  *
- * contextBridge stellt nur explizit freigegebene Methoden bereit.
- * nodeIntegration ist DEAKTIVIERT (contextIsolation: true).
+ * Die Oberfläche hat keinen direkten Zugriff auf Node.js.
+ * Nur die hier aufgeführten Funktionen stehen ihr zur Verfügung.
  */
 
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('zns', {
 
-  // ── Konfiguration ────────────────────────────────────────────
-  getConfig: () =>
-    ipcRenderer.invoke('get-config'),
+    // ── Einrichtung ────────────────────────────────────────────
+    holeConfig: () => ipcRenderer.invoke('hole-config'),
+    speichereEinrichtung: (daten) => ipcRenderer.invoke('speichere-einrichtung', daten),
+    benenneZimmerUm: (name) => ipcRenderer.invoke('benenne-zimmer-um', name),
+    sucheServerNeu: () => ipcRenderer.invoke('suche-server-neu'),
 
-  saveConfig: (config) =>
-    ipcRenderer.invoke('save-config', config),
+    // ── Nachrichten ────────────────────────────────────────────
+    sendeNachricht: (daten) => ipcRenderer.invoke('sende-nachricht', daten),
+    sendeNotfall: () => ipcRenderer.invoke('sende-notfall'),
+    bestaetigeNachricht: (id) => ipcRenderer.invoke('bestaetige-nachricht', id),
+    holeVerlauf: (partnerId) => ipcRenderer.invoke('hole-verlauf', partnerId),
 
-  // ── Verbindung & Registrierung ───────────────────────────────
-  connect: (serverConfig) =>
-    ipcRenderer.invoke('connect', serverConfig),
+    // ── Zimmer ─────────────────────────────────────────────────
+    holeZimmer: () => ipcRenderer.invoke('hole-zimmer'),
+    loescheZimmer: (id) => ipcRenderer.invoke('loesche-zimmer', id),
 
-  registerRoom: (roomData) =>
-    ipcRenderer.invoke('register-room', roomData),
+    // ── Overlay ────────────────────────────────────────────────
+    overlayErledigt: (daten) => ipcRenderer.invoke('overlay-erledigt', daten),
 
-  // ── Nachrichten senden ───────────────────────────────────────
-  sendMessage: (data) =>
-    ipcRenderer.invoke('send-message', data),
+    // ── Ereignisse vom Server ──────────────────────────────────
+    beiVerbindungsStatus: (cb) =>
+        ipcRenderer.on('verbindungs-status', (_, d) => cb(d)),
 
-  sendEmergency: () =>
-    ipcRenderer.invoke('send-emergency'),
+    beiNeuerNachricht: (cb) =>
+        ipcRenderer.on('neue-nachricht', (_, d) => cb(d)),
 
-  // ── Bestätigung ──────────────────────────────────────────────
-  acknowledgeMessage: (messageId) =>
-    ipcRenderer.invoke('acknowledge-message', messageId),
+    beiEigenenNachrichten: (cb) =>
+        ipcRenderer.on('eigene-nachrichten', (_, d) => cb(d)),
 
-  // ── Zimmer verwalten ────────────────────────────────────────
-  createRoom: (roomName) =>
-    ipcRenderer.invoke('create-room', roomName),
+    beiLesebestaetigung: (cb) =>
+        ipcRenderer.on('lesebestaetigung', (_, d) => cb(d)),
 
-  deleteRoom: (roomId) =>
-    ipcRenderer.invoke('delete-room', roomId),
+    beiZimmerListe: (cb) =>
+        ipcRenderer.on('zimmer-liste', (_, d) => cb(d)),
 
-  getRooms: () =>
-    ipcRenderer.invoke('get-rooms'),
+    beiVerlauf: (cb) =>
+        ipcRenderer.on('verlauf', (_, d) => cb(d)),
 
-  getSentMessages: () =>
-    ipcRenderer.invoke('get-sent-messages'),
+    beiServerFehler: (cb) =>
+        ipcRenderer.on('server-fehler', (_, d) => cb(d)),
 
-  // ── Eingehende Events (Server → Main → Renderer) ─────────────
-  onConnectionStatus: (cb) =>
-    ipcRenderer.on('connection-status', (_, status) => cb(status)),
+    beiServerAdresseGeaendert: (cb) =>
+        ipcRenderer.on('server-adresse-geaendert', (_, d) => cb(d)),
 
-  onRoomsUpdate: (cb) =>
-    ipcRenderer.on('rooms-update', (_, rooms) => cb(rooms)),
-
-  onShowMessage: (cb) =>
-    ipcRenderer.on('show-message', (_, message) => cb(message)),
-
-  onServerError: (cb) =>
-    ipcRenderer.on('server-error', (_, msg) => cb(msg)),
-
-  onSentMessages: (cb) =>
-    ipcRenderer.on('sent-messages', (_, msgs) => cb(msgs)),
-
-  // ── Cleanup ──────────────────────────────────────────────────
-  removeAllListeners: (channel) =>
-    ipcRenderer.removeAllListeners(channel),
+    // ── Overlay-Ereignisse ─────────────────────────────────────
+    beiZeigeNachricht: (cb) =>
+        ipcRenderer.on('zeige-nachricht', (_, d) => cb(d)),
 })

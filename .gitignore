@@ -7,10 +7,11 @@ client/package-lock.json
 __pycache__/
 *.pyc
 server/venv/
-server/zns.db
-server/certs/
 
-# Environment
+# Datenbank – enthält Praxisdaten, gehört nicht ins Repository
+server/zns.db
+
+# Konfiguration einzelner Arbeitsplätze
 .env
 
 # IDE
