@@ -201,8 +201,15 @@ function sende(payload) {
     return false
 }
 
+/** Steht bereits eine nutzbare Verbindung? */
+function istVerbunden() {
+    return ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+}
+
 async function verbinde() {
-    if (sucheLaeuft) return
+    // Doppelte Suchläufe und überflüssige Verbindungsversuche vermeiden –
+    // sonst prüft der Client den Server im Sekundentakt an, obwohl alles läuft.
+    if (sucheLaeuft || istVerbunden()) return
     sucheLaeuft = true
 
     try {
@@ -235,21 +242,49 @@ async function verbinde() {
     }
 }
 
+/**
+ * Baut eine bestehende Verbindung sauber ab.
+ * Die Ereignisbehandlung wird vorher entfernt, damit eine sterbende
+ * Verbindung nicht nachträglich einen Neuaufbau auslöst.
+ */
+function schliesseVerbindung() {
+    if (!ws) return
+    const alt = ws
+    ws = null
+    try {
+        alt.removeAllListeners()
+        alt.terminate()
+    } catch (_) { }
+}
+
 function oeffneVerbindung(host, port) {
+    // Reste einer früheren Verbindung zuerst entfernen
+    schliesseVerbindung()
+
     const url = `ws://${host}:${port}`
     console.log(`[WS] Verbinde mit ${url}`)
 
+    let socket
     try {
-        ws = new WebSocket(url, { handshakeTimeout: 4000 })
+        socket = new WebSocket(url, { handshakeTimeout: 4000 })
     } catch (e) {
         console.error('[WS] Konnte nicht verbinden:', e.message)
         planeNeuverbindung()
         return
     }
 
-    ws.on('open', () => {
+    ws = socket
+
+    // Jeder Handler arbeitet ausschliesslich mit seinem eigenen Socket und
+    // prüft, ob dieser noch der aktuelle ist. Ohne diese Prüfung kann ein
+    // veraltetes Ereignis eine frisch aufgebaute Verbindung wieder zerstören.
+    const istAktuell = () => ws === socket
+
+    socket.on('open', () => {
+        if (!istAktuell()) return
         console.log('[WS] Verbunden')
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+        versuchZaehler = 0   // nach Erfolg wieder mit kurzen Abständen beginnen
 
         if (config.room_name) {
             sende({ type: 'register', room_id: config.room_id, room_name: config.room_name })
@@ -259,7 +294,8 @@ function oeffneVerbindung(host, port) {
         }
     })
 
-    ws.on('message', (roh) => {
+    socket.on('message', (roh) => {
+        if (!istAktuell()) return
         let daten
         try {
             daten = JSON.parse(roh.toString())
@@ -269,15 +305,18 @@ function oeffneVerbindung(host, port) {
         verarbeiteServerNachricht(daten)
     })
 
-    ws.on('close', () => {
+    socket.on('close', () => {
+        if (!istAktuell()) return   // veraltete Verbindung – ignorieren
         console.log('[WS] Verbindung beendet')
+        ws = null
         statusMelden('getrennt', 'Verbindung unterbrochen')
         planeNeuverbindung()
     })
 
-    ws.on('error', (fehler) => {
+    socket.on('error', (fehler) => {
         console.error('[WS] Fehler:', fehler.message)
-        try { ws.terminate() } catch (_) { }
+        // Nur den eigenen Socket beenden, niemals die globale Verbindung
+        try { socket.terminate() } catch (_) { }
     })
 }
 
@@ -323,12 +362,24 @@ function verarbeiteServerNachricht(daten) {
     }
 }
 
-function planeNeuverbindung(verzoegerung = 3000) {
-    if (reconnectTimer) return
+// Abstände zwischen den Verbindungsversuchen. Anfangs schnell, damit kurze
+// Aussetzer sofort überbrückt werden; danach ruhiger, damit ein abgeschalteter
+// Server nicht die ganze Nacht im Sekundentakt angefragt wird. Bei 15 Sekunden
+// gedeckelt: Startet der Server im laufenden Betrieb neu, sollen die
+// Arbeitsplätze nicht spürbar lange warten.
+const WARTEZEITEN = [3000, 3000, 5000, 10000, 15000]
+let versuchZaehler = 0
+
+function planeNeuverbindung() {
+    if (reconnectTimer || istVerbunden()) return
+
+    const wartezeit = WARTEZEITEN[Math.min(versuchZaehler, WARTEZEITEN.length - 1)]
+    versuchZaehler++
+
     reconnectTimer = setTimeout(() => {
         reconnectTimer = null
         verbinde()
-    }, verzoegerung)
+    }, wartezeit)
 }
 
 // ──────────────────────────── Schnittstelle zur Oberfläche ────────────────────────────
@@ -343,8 +394,8 @@ ipcMain.handle('speichere-einrichtung', async (_, daten) => {
 
     // Verbindung neu aufbauen, damit der Name sofort greift
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-    try { ws?.terminate() } catch (_) { }
-    ws = null
+    versuchZaehler = 0
+    schliesseVerbindung()
     await verbinde()
 
     return { erfolg: true, config: { ...config } }
@@ -410,10 +461,10 @@ ipcMain.handle('benenne-zimmer-um', (_, neuerName) => {
 })
 
 ipcMain.handle('suche-server-neu', async () => {
-    // Erzwingt eine vollständige Suche, auch wenn eine Adresse gespeichert ist
-    try { ws?.terminate() } catch (_) { }
-    ws = null
+    // Erzwingt eine vollständige Suche, auch wenn eine Verbindung besteht
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+    versuchZaehler = 0
+    schliesseVerbindung()
     await verbinde()
     return { erfolg: true, host: config.server_host }
 })

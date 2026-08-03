@@ -1,6 +1,6 @@
 {
   "name": "zns-client",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "ZNS – Zentrales Nachrichten-System (Praxis-Client)",
   "main": "main.js",
   "author": "Praxis",

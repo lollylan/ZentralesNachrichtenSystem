@@ -17,6 +17,7 @@ import json
 import logging
 import socket
 import sys
+import time
 from typing import Any
 
 import websockets
@@ -33,6 +34,11 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("ZNS")
+
+# Die websockets-Bibliothek meldet sonst jede einzelne TCP-Verbindung mit
+# "connection open" / "connection closed". Da die Clients den Server beim
+# Suchen kurz antippen, geht das Wesentliche darin unter.
+logging.getLogger("websockets").setLevel(logging.WARNING)
 
 db = Database()
 
@@ -240,7 +246,9 @@ async def handle_client(ws):
     room_id = None
     room_name = "Unbekannt"
     peer = ws.remote_address[0] if ws.remote_address else "?"
-    log.info(f"Neue Verbindung von {peer}")
+    # Bewusst nur im Detailmodus: Aussagekräftig ist die Anmeldung
+    # direkt danach, die den Zimmernamen nennt.
+    log.debug(f"Neue Verbindung von {peer}")
 
     try:
         async for raw in ws:
@@ -311,6 +319,12 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
     IP-Adresse sich geändert hat.
     """
 
+    def __init__(self):
+        # Ein Client sendet pro Suchlauf mehrere Rundrufe (einmal allgemein,
+        # einmal je Netzwerkadapter). Hier wird gemerkt, wann zuletzt für eine
+        # Adresse protokolliert wurde, damit nicht dreimal dasselbe im Log steht.
+        self._zuletzt: dict[str, float] = {}
+
     def connection_made(self, transport):
         self.transport = transport
 
@@ -327,7 +341,11 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             "hostname": socket.gethostname(),
         })
         self.transport.sendto(antwort.encode("utf-8"), addr)
-        log.info(f"  Suchanfrage von {addr[0]} beantwortet")
+
+        jetzt = time.monotonic()
+        if jetzt - self._zuletzt.get(addr[0], 0) > 5:
+            self._zuletzt[addr[0]] = jetzt
+            log.info(f"  Suchanfrage von {addr[0]} beantwortet")
 
 
 async def start_discovery_service():
