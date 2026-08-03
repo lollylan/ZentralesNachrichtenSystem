@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Immer neben dieser Datei – unabhängig davon, aus welchem Verzeichnis
+# der Server gestartet wurde.
 DB_PATH = Path(__file__).parent / "zns.db"
 
 
@@ -22,6 +24,7 @@ class Database:
     """SQLite-Wrapper für Zimmer, Nachrichten und Lesebestätigungen."""
 
     def __init__(self):
+        self.pfad = DB_PATH
         self._init_db()
 
     def _conn(self):

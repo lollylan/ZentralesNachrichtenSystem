@@ -162,6 +162,18 @@ Bewusst so: Das System läuft nur im internen Praxisnetz und hat keine Verbindun
 nach aussen. Verschlüsselung würde nur Zertifikatswarnungen und Fehlerquellen
 schaffen, ohne im abgeschlossenen Netz Sicherheit hinzuzugewinnen.
 
+**Warum gibt es den Server nicht als EXE?**
+Wurde ausprobiert und wieder verworfen. Eine mit PyInstaller gebaute EXE wird
+von Windows Defender blockiert – sie ist unsigniert und nutzt einen generischen
+Bootloader, den auch Schadsoftware verwendet. Man müsste auf dem Server eine
+Virenschutz-Ausnahme eintragen, und nach jedem neuen Build erneut, weil sich die
+Prüfsumme ändert. Ein Signaturzertifikat kostet 250–400 € im Jahr.
+
+Da der Server auf genau einem Rechner läuft, ist Python dort einmal zu
+installieren der deutlich kleinere Aufwand. `python.exe` ist signiert, damit
+entfällt das Problem vollständig. Für die Clients bleibt es bei der EXE – die
+werden auf viele PCs verteilt, und Electron bringt einen signierten Starter mit.
+
 **Wo liegen die Daten?**
 Alle Nachrichten liegen in `server\zns.db` auf dem Praxisserver. Diese Datei
 gehört in die Datensicherung – und niemals in ein öffentliches Repository.

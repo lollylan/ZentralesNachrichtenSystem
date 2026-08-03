@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import socket
+import sys
 from typing import Any
 
 import websockets
@@ -354,6 +355,8 @@ async def main():
     log.info("  Die Clients finden den Server auch automatisch,")
     log.info("  falls sich diese IP-Adresse einmal ändert.")
     log.info("")
+    log.info(f"  Datenbank (bitte sichern):       {db.pfad}")
+    log.info("")
     log.info("  Beenden mit Strg+C")
     log.info("=" * 58)
 
@@ -375,3 +378,23 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         log.info("Server beendet.")
+    except OSError as e:
+        # Häufigster Fall: der Port ist schon belegt. Die Fehlernummer steht
+        # je nach Windows-Sprache nur im Text, deshalb wird auch dort gesucht.
+        text = str(e).lower()
+        belegt = (
+            getattr(e, "winerror", None) == 10048
+            or e.errno in (48, 98)          # macOS / Linux
+            or "10048" in text
+            or "address already in use" in text
+        )
+        log.error("")
+        if belegt:
+            log.error(f"Port {WS_PORT} wird bereits verwendet.")
+            log.error("Läuft der ZNS-Server vielleicht schon in einem anderen Fenster?")
+        else:
+            log.error(f"Der Server konnte nicht gestartet werden: {e}")
+        sys.exit(1)
+    except Exception as e:
+        log.error(f"Unerwarteter Fehler: {e}", exc_info=True)
+        sys.exit(1)
